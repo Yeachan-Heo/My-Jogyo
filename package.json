@@ -1,0 +1,22 @@
+{
+  "name": "vibesci",
+  "version": "0.1.0",
+  "description": "Scientific research agent extension for OpenCode",
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "test:watch": "bun test --watch"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "bun-types": "latest"
+  },
+  "keywords": [
+    "opencode",
+    "research",
+    "scientific",
+    "jupyter",
+    "repl"
+  ],
+  "license": "MIT"
+}
