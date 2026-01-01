@@ -4,8 +4,8 @@
   "description": "Scientific research agent extension for OpenCode",
   "type": "module",
   "scripts": {
-    "test": "bun test",
-    "test:watch": "bun test --watch"
+    "test": "bun test ./tests ./.opencode/lib ./.opencode/tool",
+    "test:watch": "bun test --watch ./tests ./.opencode/lib ./.opencode/tool"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

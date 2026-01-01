@@ -47,3 +47,6 @@ htmlcov/
 
 # Session data
 .gyoshu/
+
+# Gyoshu runtime (ephemeral session data - sockets, locks)
+gyoshu/runtime/
