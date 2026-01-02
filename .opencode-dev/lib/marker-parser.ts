@@ -327,13 +327,10 @@ export function parseMarkers(text: string): ParseResult {
         }
       }
 
-      // Validate against taxonomy
+      // Validate against taxonomy (silently track unknown markers)
       const valid = type in MARKER_TAXONOMY;
-      if (!valid) {
-        console.warn(`[marker-parser] Unknown marker [${type}] at line ${i + 1}`);
-        if (!unknownTypes.includes(type)) {
-          unknownTypes.push(type);
-        }
+      if (!valid && !unknownTypes.includes(type)) {
+        unknownTypes.push(type);
       }
 
       markers.push({
