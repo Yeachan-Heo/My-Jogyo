@@ -65,15 +65,18 @@ This is an OpenCode extension - no compilation needed. TypeScript files are exec
 
 #### Imports
 ```python
-# Standard library first
-import sys
-import os
+# Standard library first (alphabetical within each category)
+import argparse
 import json
+import os
+import sys
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Callable
 
-# Third-party next (blank line)
+# Third-party next (blank line before)
 import pytest
 
-# Local imports last (blank line)
+# Local imports last (blank line before)
 from gyoshu_bridge import parse_markers, execute_code
 ```
 
@@ -123,12 +126,22 @@ def send_response(
 
 #### Error Handling
 ```python
-# Use specific exception types
+# Use specific exception types with descriptive context
 try:
     result = json.loads(data)
 except json.JSONDecodeError as e:
     return make_error(ERROR_PARSE, f"Parse error: {e}")
-
+except TimeoutError as e:
+    result["exception"] = str(e)
+    result["exception_type"] = "TimeoutError"
+except KeyboardInterrupt:
+    result["exception"] = "Execution interrupted"
+    result["exception_type"] = "KeyboardInterrupt"
+except Exception as e:
+    # Last resort - always include type and message
+    result["exception"] = str(e)
+    result["exception_type"] = type(e).__name__
+    
 # Never use bare except
 # Never silently swallow exceptions
 ```
@@ -137,16 +150,22 @@ except json.JSONDecodeError as e:
 
 #### Imports
 ```typescript
-// Built-in Node modules first
+// External packages first
+import { tool } from "@opencode-ai/plugin";
+
+// Built-in Node modules next
 import * as fs from "fs/promises";
 import * as path from "path";
 import * as os from "os";
 
-// External packages next
-import { tool } from "@opencode-ai/plugin";
-
-// Local modules last
-import { durableAtomicWrite, fileExists } from "../lib/atomic-write";
+// Local modules last (use multi-line for readability)
+import { durableAtomicWrite, fileExists, readFile } from "../lib/atomic-write";
+import {
+  getRuntimeDir,
+  getSessionDir,
+  ensureDirSync,
+  existsSync,
+} from "../lib/paths";
 ```
 
 #### JSDoc Comments
@@ -218,6 +237,18 @@ class TestModuleName:
     def setup_data(self):
         """Fixture description."""
         return {"test": "data"}
+```
+
+#### TypeScript Tests (Bun)
+```typescript
+import { describe, test, expect } from "bun:test";
+
+describe("ModuleName", () => {
+  test("specific behavior", () => {
+    const result = functionUnderTest(input);
+    expect(result.expectedKey).toBe(expectedValue);
+  });
+});
 ```
 
 ## Slash Commands
