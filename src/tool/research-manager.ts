@@ -262,6 +262,58 @@ function validateId(id: string, type: string): void {
 }
 
 // =============================================================================
+// REPORT TITLE GENERATION
+// =============================================================================
+
+/**
+ * Generate a unique reportTitle with timestamp prefix.
+ * 
+ * Format: YYYYMMDD-HHMMSS-{6char}-{slug}
+ * Example: 20260102-143022-a1b2c3-customer-churn-analysis
+ * 
+ * @param slug - User-provided slug (e.g., "customer-churn-analysis")
+ * @returns Prefixed reportTitle
+ */
+function generateReportTitle(slug: string): string {
+  const now = new Date();
+  
+  // Format: YYYYMMDD-HHMMSS
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  const seconds = String(now.getSeconds()).padStart(2, '0');
+  const timestamp = `${year}${month}${day}-${hours}${minutes}${seconds}`;
+  
+  // Generate 6-character random ID
+  const randomId = Math.random().toString(36).substring(2, 8);
+  
+  // Sanitize slug: lowercase, replace spaces with hyphens, remove special chars
+  const sanitizedSlug = slug
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+  
+  return `${timestamp}-${randomId}-${sanitizedSlug}`;
+}
+
+/**
+ * Check if a reportTitle is in the prefixed format.
+ * 
+ * @param reportTitle - The reportTitle to check
+ * @returns true if it matches YYYYMMDD-HHMMSS-{6char}-{slug} pattern
+ */
+function isPrefixedReportTitle(reportTitle: string): boolean {
+  // Pattern: YYYYMMDD-HHMMSS-{6char}-{anything}
+  const pattern = /^\d{8}-\d{6}-[a-z0-9]{6}-.+$/;
+  return pattern.test(reportTitle);
+}
+
+// =============================================================================
 // HELPER FUNCTIONS
 // =============================================================================
 
@@ -720,9 +772,13 @@ export default tool({
       // =========================================================================
 
       case "create": {
-        const { reportTitle, title, goal, tags } = args;
+        const { reportTitle: inputTitle, title, goal, tags } = args;
 
-        if (reportTitle) {
+        if (inputTitle) {
+          const reportTitle = isPrefixedReportTitle(inputTitle) 
+            ? inputTitle 
+            : generateReportTitle(inputTitle);
+          
           validatePathSegment(reportTitle, "reportTitle");
 
           const notebookPath = getNotebookPath(reportTitle);

@@ -15,8 +15,9 @@
 import { tool } from "@opencode-ai/plugin";
 import * as fs from "fs/promises";
 import * as path from "path";
+import * as crypto from "crypto";
 import { fileExists, readFile } from "../lib/atomic-write";
-import { getLegacyArtifactsDir, getLegacyManifestPath } from "../lib/paths";
+import { getLegacyArtifactsDir, getLegacyManifestPath, getCheckpointDir } from "../lib/paths";
 
 // Path resolution is handled by ../lib/paths.ts
 // Uses legacy session paths for backward compatibility with existing sessions
@@ -52,6 +53,11 @@ interface SessionManifest {
   goal?: string;
   goalStatus?: string;
   cycle?: number;
+  reportTitle?: string;
+  runId?: string;
+  budgets?: {
+    currentCycle?: number;
+  };
 }
 
 /**
@@ -127,6 +133,24 @@ interface NotebookOutlineEntry {
 }
 
 /**
+ * Checkpoint info for snapshot
+ */
+interface CheckpointInfo {
+  checkpointId: string;
+  stageId: string;
+  createdAt: string;
+  status: string;
+  /**
+   * Validation status of the checkpoint manifest.
+   * - "valid": Manifest SHA256 is correct
+   * - "invalid_sha256": Manifest SHA256 mismatch (corrupted)
+   * - "emergency_no_artifacts": Emergency checkpoint with no artifacts
+   * - "parse_error": Failed to parse checkpoint.json
+   */
+  validationStatus: "valid" | "invalid_sha256" | "emergency_no_artifacts" | "parse_error";
+}
+
+/**
  * Complete session snapshot structure
  */
 interface SessionSnapshot {
@@ -151,6 +175,15 @@ interface SessionSnapshot {
   // Timing
   lastActivityAt: string;
   elapsedMinutes: number;
+
+  // Checkpoint info
+  lastCheckpoint?: CheckpointInfo;
+  /**
+   * Whether the checkpoint manifest is valid.
+   * NOTE: This validates manifest SHA256 only, not artifact integrity.
+   * Use checkpoint-manager(action: "validate") for full validation.
+   */
+  resumable: boolean;
 }
 
 /**
@@ -411,6 +444,92 @@ export default tool({
     // Scan artifacts
     const artifacts = await scanArtifacts(researchSessionID);
 
+    // Check for checkpoints
+    let lastCheckpoint: CheckpointInfo | undefined = undefined;
+    let resumable = false;
+
+    const reportTitle =
+      manifest.reportTitle ||
+      manifest.goal?.toLowerCase().replace(/\s+/g, "-").slice(0, 50);
+
+    if (reportTitle) {
+      try {
+        const checkpointDir = getCheckpointDir(
+          reportTitle,
+          manifest.runId || "run-001"
+        );
+
+        const entries = await fs
+          .readdir(checkpointDir, { withFileTypes: true })
+          .catch(() => []);
+        if (entries.length > 0) {
+          const latest = entries
+            .filter((e) => e.isDirectory())
+            .sort()
+            .pop();
+          if (latest) {
+            const checkpointManifestPath = path.join(
+              checkpointDir,
+              latest.name,
+              "checkpoint.json"
+            );
+            const content = await fs
+              .readFile(checkpointManifestPath, "utf-8")
+              .catch(() => null);
+            if (content) {
+              try {
+                const ckpt = JSON.parse(content);
+                
+                const storedSha256 = ckpt.manifestSha256;
+                const manifestBase = { ...ckpt };
+                delete manifestBase.manifestSha256;
+                const computedSha256 = crypto
+                  .createHash("sha256")
+                  .update(JSON.stringify(manifestBase, null, 2), "utf8")
+                  .digest("hex");
+                
+                const sha256Valid = storedSha256 === computedSha256;
+                const isEmergencyWithNoArtifacts = 
+                  ckpt.status === "emergency" && (!ckpt.artifacts || ckpt.artifacts.length === 0);
+                
+                let validationStatus: CheckpointInfo["validationStatus"];
+                
+                if (!sha256Valid) {
+                  validationStatus = "invalid_sha256";
+                  resumable = false;
+                } else if (isEmergencyWithNoArtifacts) {
+                  validationStatus = "emergency_no_artifacts";
+                  resumable = false;
+                } else {
+                  validationStatus = "valid";
+                  resumable = true;
+                }
+                
+                lastCheckpoint = {
+                  checkpointId: ckpt.checkpointId,
+                  stageId: ckpt.stageId,
+                  createdAt: ckpt.createdAt,
+                  status: ckpt.status,
+                  validationStatus,
+                };
+              } catch {
+                lastCheckpoint = {
+                  checkpointId: latest.name,
+                  stageId: "unknown",
+                  createdAt: new Date().toISOString(),
+                  status: "unknown",
+                  validationStatus: "parse_error",
+                };
+                resumable = false;
+              }
+            }
+          }
+        }
+      } catch {
+        // Checkpoint lookup failed - not critical
+      }
+    }
+
     // Build recent cells from manifest
     const recentCells = buildRecentCells(manifest, maxRecentCells);
 
@@ -456,6 +575,9 @@ export default tool({
 
       lastActivityAt,
       elapsedMinutes,
+
+      lastCheckpoint,
+      resumable,
     };
 
     return JSON.stringify(
@@ -468,6 +590,7 @@ export default tool({
           cellCount: notebook?.cells.length ?? 0,
           artifactCount: artifacts.length,
           executedCellCount: Object.keys(manifest.executedCells || {}).length,
+          resumableNote: "manifest-only validation; use checkpoint-manager validate for full check",
         },
       },
       null,

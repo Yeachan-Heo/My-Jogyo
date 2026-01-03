@@ -140,6 +140,46 @@ export function getReportReadmePath(reportTitle: string): string {
 }
 
 // =============================================================================
+// CHECKPOINT PATH GETTERS
+// =============================================================================
+
+/**
+ * Get the checkpoints directory for a research run.
+ * Contains all checkpoints created during this run.
+ *
+ * @param reportTitle - The report/research title (e.g., "customer-churn-analysis")
+ * @param runId - The run identifier (e.g., "run-001")
+ * @returns Path to reports/{reportTitle}/checkpoints/{runId}/
+ *
+ * @example
+ * getCheckpointDir('customer-churn', 'run-001');
+ * // Returns: '/home/user/my-project/reports/customer-churn/checkpoints/run-001'
+ */
+export function getCheckpointDir(reportTitle: string, runId: string): string {
+  return path.join(getReportDir(reportTitle), "checkpoints", runId);
+}
+
+/**
+ * Get the path to a specific checkpoint's manifest file.
+ *
+ * @param reportTitle - The report/research title
+ * @param runId - The run identifier
+ * @param checkpointId - The checkpoint identifier (e.g., "ckpt-001")
+ * @returns Path to reports/{reportTitle}/checkpoints/{runId}/{checkpointId}/checkpoint.json
+ *
+ * @example
+ * getCheckpointManifestPath('customer-churn', 'run-001', 'ckpt-001');
+ * // Returns: '/home/user/my-project/reports/customer-churn/checkpoints/run-001/ckpt-001/checkpoint.json'
+ */
+export function getCheckpointManifestPath(
+  reportTitle: string,
+  runId: string,
+  checkpointId: string
+): string {
+  return path.join(getCheckpointDir(reportTitle, runId), checkpointId, "checkpoint.json");
+}
+
+// =============================================================================
 // ROOT DETECTION (SYNC)
 // =============================================================================
 

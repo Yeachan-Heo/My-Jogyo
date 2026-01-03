@@ -39,8 +39,8 @@ import {
 
 const DEFAULT_EXECUTION_TIMEOUT_MS = 300000;
 const DEFAULT_QUEUE_TIMEOUT_MS = 30000;
-const TIMEOUT_SIGINT_TO_SIGTERM_MS = 5000;
-const TIMEOUT_SIGTERM_TO_SIGKILL_MS = 3000;
+const DEFAULT_GRACE_PERIOD_MS = 5000;
+const DEFAULT_SIGTERM_GRACE_MS = 3000;
 const BRIDGE_SPAWN_TIMEOUT_MS = 5000;
 
 const ERROR_QUEUE_TIMEOUT = -32004;
@@ -286,6 +286,22 @@ interface ResetResult {
 
 interface InterruptResult {
   status: string;
+  /** Partial stdout captured before/during interrupt */
+  partialStdout?: string;
+  /** Partial stderr captured before/during interrupt */
+  partialStderr?: string;
+  /** Which signal caused process termination */
+  terminatedBy?: "SIGINT" | "SIGTERM" | "SIGKILL" | "graceful";
+  /** Time in ms until process terminated */
+  terminationTimeMs?: number;
+}
+
+/** Options for graceful interrupt with timeout escalation */
+interface InterruptWithTimeoutOptions {
+  /** Time in ms to wait between escalation steps. Default: 5000 */
+  gracePeriodMs?: number;
+  /** Whether to attempt capturing partial output before signaling. Default: true */
+  preserveOutput?: boolean;
 }
 
 const locks = new Map<string, SessionLock>();
@@ -546,25 +562,36 @@ function sendSocketRequest<T>(
   });
 }
 
-/**
- * Kill a bridge server with escalation (SIGINT → SIGTERM → SIGKILL)
- */
-async function killBridgeWithEscalation(sessionId: string): Promise<void> {
+interface EscalationResult {
+  terminatedBy: "SIGINT" | "SIGTERM" | "SIGKILL" | "already_dead";
+  terminationTimeMs: number;
+}
+
+async function killBridgeWithEscalation(
+  sessionId: string,
+  options?: { gracePeriodMs?: number }
+): Promise<EscalationResult> {
+  const gracePeriod = options?.gracePeriodMs ?? DEFAULT_GRACE_PERIOD_MS;
+  const sigtermGrace = Math.max(Math.floor(gracePeriod / 2), 1000);
+  const startTime = Date.now();
+  
   const meta = readBridgeMeta(sessionId);
-  if (!meta) return;
+  if (!meta) {
+    return { terminatedBy: "already_dead", terminationTimeMs: 0 };
+  }
   
   if (!isProcessAlive(meta.pid)) {
     deleteBridgeMeta(sessionId);
-    return;
+    return { terminatedBy: "already_dead", terminationTimeMs: 0 };
   }
   
   const waitForExit = (timeoutMs: number): Promise<boolean> => {
     return new Promise((resolve) => {
-      const startTime = Date.now();
+      const checkStart = Date.now();
       const check = () => {
         if (!isProcessAlive(meta.pid)) {
           resolve(true);
-        } else if (Date.now() - startTime > timeoutMs) {
+        } else if (Date.now() - checkStart > timeoutMs) {
           resolve(false);
         } else {
           setTimeout(check, 100);
@@ -574,34 +601,39 @@ async function killBridgeWithEscalation(sessionId: string): Promise<void> {
     });
   };
   
-  // SIGINT
+  let terminatedBy: EscalationResult["terminatedBy"] = "SIGINT";
+  
   try {
     process.kill(meta.pid, "SIGINT");
   } catch {}
   
-  if (!(await waitForExit(TIMEOUT_SIGINT_TO_SIGTERM_MS))) {
-    // SIGTERM
+  if (!(await waitForExit(gracePeriod))) {
+    terminatedBy = "SIGTERM";
     try {
       process.kill(meta.pid, "SIGTERM");
     } catch {}
     
-    if (!(await waitForExit(TIMEOUT_SIGTERM_TO_SIGKILL_MS))) {
-      // SIGKILL
+    if (!(await waitForExit(sigtermGrace))) {
+      terminatedBy = "SIGKILL";
       try {
         process.kill(meta.pid, "SIGKILL");
       } catch {}
+      await waitForExit(1000);
     }
   }
   
-  // Clean up metadata
   deleteBridgeMeta(sessionId);
   
-  // Clean up socket file
   try {
     if (fs.existsSync(meta.socketPath)) {
       fs.unlinkSync(meta.socketPath);
     }
   } catch {}
+  
+  return {
+    terminatedBy,
+    terminationTimeMs: Date.now() - startTime,
+  };
 }
 
 function getOrCreateLock(sessionId: string): SessionLock {
@@ -693,6 +725,22 @@ export default tool({
         "Current run ID for frontmatter tracking. " +
         "When provided with auto-capture, updates the run status in notebook frontmatter."
       ),
+    interruptWithTimeout: tool.schema
+      .object({
+        gracePeriodMs: tool.schema
+          .number()
+          .optional()
+          .describe("Time in ms to wait between signal escalation steps. Default: 5000"),
+        preserveOutput: tool.schema
+          .boolean()
+          .optional()
+          .describe("Attempt to capture partial output before forcing termination. Default: true"),
+      })
+      .optional()
+      .describe(
+        "Options for graceful interrupt with timeout escalation (interrupt action only). " +
+        "Escalates: SIGINT -> gracePeriodMs -> SIGTERM -> gracePeriodMs/2 -> SIGKILL"
+      ),
   },
 
   async execute(args) {
@@ -707,6 +755,7 @@ export default tool({
       autoCapture = false,
       reportTitle,
       runId,
+      interruptWithTimeout,
     } = args;
 
     if (!researchSessionID || typeof researchSessionID !== "string") {
@@ -862,15 +911,46 @@ export default tool({
         }
 
         case "interrupt": {
+          const gracePeriodMs = interruptWithTimeout?.gracePeriodMs ?? DEFAULT_GRACE_PERIOD_MS;
+          const preserveOutput = interruptWithTimeout?.preserveOutput ?? true;
+          
+          let partialStdout: string | undefined;
+          let partialStderr: string | undefined;
+          
+          if (preserveOutput) {
+            try {
+              await sendSocketRequest<StateResult>(meta.socketPath, "get_state", {}, 2000);
+            } catch {
+            }
+          }
+          
           try {
-            const result = await sendSocketRequest<InterruptResult>(meta.socketPath, "interrupt", {}, 5000);
-            return JSON.stringify({ success: true, ...result });
+            const result = await sendSocketRequest<InterruptResult>(
+              meta.socketPath,
+              "interrupt",
+              {},
+              Math.min(gracePeriodMs, 5000)
+            );
+            return JSON.stringify({
+              success: true,
+              ...result,
+              terminatedBy: "graceful",
+              partialStdout,
+              partialStderr,
+            });
           } catch (e) {
-            await killBridgeWithEscalation(researchSessionID);
+            const escalationResult = await killBridgeWithEscalation(
+              researchSessionID,
+              { gracePeriodMs }
+            );
             return JSON.stringify({
               success: true,
               status: "forced_kill",
-              message: "Bridge was unresponsive, process killed",
+              message: `Bridge was unresponsive, terminated by ${escalationResult.terminatedBy}`,
+              terminatedBy: escalationResult.terminatedBy,
+              terminationTimeMs: escalationResult.terminationTimeMs,
+              partialStdout,
+              partialStderr,
             });
           }
         }
@@ -940,8 +1020,11 @@ export async function cleanupAllBridges(): Promise<void> {
   }
 }
 
-export async function killSessionBridge(sessionId: string): Promise<void> {
-  await killBridgeWithEscalation(sessionId);
+export async function killSessionBridge(
+  sessionId: string,
+  options?: { gracePeriodMs?: number }
+): Promise<EscalationResult> {
+  return killBridgeWithEscalation(sessionId, options);
 }
 
 export function resetExecutionCounter(sessionId: string): void {
@@ -951,3 +1034,9 @@ export function resetExecutionCounter(sessionId: string): void {
 export function getExecutionCount(sessionId: string): number {
   return executionCounters.get(sessionId) || 0;
 }
+
+export { EscalationResult };
+export const ESCALATION_DEFAULTS = {
+  gracePeriodMs: DEFAULT_GRACE_PERIOD_MS,
+  sigtermGraceMs: DEFAULT_SIGTERM_GRACE_MS,
+} as const;

@@ -71,6 +71,13 @@ export interface MetricEntry {
   subtype?: string;
 }
 
+export interface ExecutionHistoryEntry {
+  stageId: string;
+  status: "completed" | "interrupted" | "failed";
+  duration?: string;
+  startedAt?: string;
+}
+
 export interface ReportModel {
   title: string;
   objective?: string;
@@ -84,6 +91,7 @@ export interface ReportModel {
   artifacts: ArtifactEntry[];
   frontmatter?: GyoshuFrontmatter;
   generatedAt: string;
+  executionHistory?: ExecutionHistoryEntry[];
 }
 
 const SENTINEL_BEGIN = (name: string) => `<!-- GYOSHU:REPORT:${name}:BEGIN -->`;
@@ -189,6 +197,20 @@ export function buildReportModel(
         .join(" ")
     : "Research";
 
+  // Extract STAGE markers for execution history
+  const stageMarkers = getMarkersByType(markers, "STAGE");
+  const executionHistory: ExecutionHistoryEntry[] = [];
+
+  for (const marker of stageMarkers) {
+    if (marker.subtype === "end" && marker.attributes) {
+      executionHistory.push({
+        stageId: marker.attributes.id || "unknown",
+        status: marker.attributes.status === "interrupted" ? "interrupted" : "completed",
+        duration: marker.attributes.duration,
+      });
+    }
+  }
+
   return {
     title,
     objective: objectives[0]?.content,
@@ -206,6 +228,7 @@ export function buildReportModel(
     artifacts,
     frontmatter,
     generatedAt: new Date().toISOString(),
+    executionHistory: executionHistory.length > 0 ? executionHistory : undefined,
   };
 }
 
@@ -313,6 +336,28 @@ export function renderReportMarkdown(model: ReportModel): string {
     }
     lines.push("");
     lines.push(SENTINEL_END("NEXT_STEPS"));
+    lines.push("");
+  }
+
+  if (model.executionHistory && model.executionHistory.length > 0) {
+    lines.push(SENTINEL_BEGIN("EXECUTION_HISTORY"));
+    lines.push("## Execution History");
+    lines.push("");
+    lines.push("| Stage | Status | Duration |");
+    lines.push("|-------|--------|----------|");
+    for (const entry of model.executionHistory) {
+      const status = entry.status === "completed" ? "✅" : "⚠️";
+      lines.push(`| ${entry.stageId} | ${status} ${entry.status} | ${entry.duration || "-"} |`);
+    }
+    lines.push("");
+
+    const interrupts = model.executionHistory.filter(e => e.status === "interrupted");
+    if (interrupts.length > 0) {
+      lines.push(`*Note: ${interrupts.length} stage(s) were interrupted and resumed.*`);
+      lines.push("");
+    }
+
+    lines.push(SENTINEL_END("EXECUTION_HISTORY"));
     lines.push("");
   }
 

@@ -4,11 +4,15 @@
  * marker parsing, and process lifecycle management.
  */
 
-import { describe, test, expect, beforeEach, afterEach, beforeAll } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, beforeAll, afterAll } from 'bun:test';
 import { spawn, ChildProcess } from 'child_process';
 import * as path from 'path';
 import * as readline from 'readline';
 import * as fs from 'fs/promises';
+import * as os from 'os';
+import * as crypto from 'crypto';
+import checkpointManager from '../src/tool/checkpoint-manager';
+import { clearProjectRootCache } from '../src/lib/paths';
 
 const BRIDGE_PATH = path.join(__dirname, '..', '.opencode', 'bridge', 'gyoshu_bridge.py');
 const REQUEST_TIMEOUT_MS = 5000;
@@ -615,6 +619,464 @@ print("[CONCLUSION] Analysis complete")
       expect(results).toHaveLength(5);
       results.forEach(r => expect(r.status).toBe('ok'));
     });
+  });
+});
+
+describe('Checkpoint System Integration', () => {
+  let testDir: string;
+  let originalCwd: string;
+  let originalProjectRoot: string | undefined;
+
+  async function executeCheckpoint(args: {
+    action: string;
+    reportTitle?: string;
+    runId?: string;
+    checkpointId?: string;
+    researchSessionID?: string;
+    stageId?: string;
+    status?: "saved" | "interrupted" | "emergency";
+    reason?: "timeout" | "abort" | "error";
+    executionCount?: number;
+    notebookPathOverride?: string;
+    pythonEnv?: {
+      pythonPath: string;
+      packages: string[];
+      platform: string;
+    };
+    artifacts?: Array<{
+      relativePath: string;
+      sha256: string;
+      sizeBytes: number;
+    }>;
+    rehydrationMode?: "artifacts_only" | "with_vars";
+    rehydrationSource?: string[];
+    keepCount?: number;
+  }): Promise<{ success: boolean; [key: string]: unknown }> {
+    const result = await checkpointManager.execute(args as any);
+    return JSON.parse(result);
+  }
+
+  async function createTestArtifact(
+    relativePath: string,
+    content: string
+  ): Promise<{ relativePath: string; sha256: string; sizeBytes: number }> {
+    const absolutePath = path.join(testDir, relativePath);
+    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+    await fs.writeFile(absolutePath, content, "utf-8");
+
+    const stats = await fs.stat(absolutePath);
+    const sha256 = crypto.createHash("sha256").update(content, "utf8").digest("hex");
+
+    return {
+      relativePath,
+      sha256,
+      sizeBytes: stats.size,
+    };
+  }
+
+  async function createTestNotebook(reportTitle: string): Promise<string> {
+    const notebookPath = path.join(testDir, "notebooks", `${reportTitle}.ipynb`);
+    await fs.mkdir(path.dirname(notebookPath), { recursive: true });
+
+    const notebook = {
+      cells: [
+        {
+          cell_type: "code",
+          source: ["print('[OBJECTIVE] Test research objective')"],
+          metadata: {},
+          execution_count: 1,
+          outputs: [],
+        },
+      ],
+      metadata: {
+        kernelspec: {
+          display_name: "Python 3",
+          language: "python",
+          name: "python3",
+        },
+        language_info: {
+          name: "python",
+          version: "3.11",
+          mimetype: "text/x-python",
+          file_extension: ".py",
+        },
+      },
+      nbformat: 4,
+      nbformat_minor: 5,
+    };
+
+    await fs.writeFile(notebookPath, JSON.stringify(notebook, null, 2));
+    return notebookPath;
+  }
+
+  async function readTestNotebook(notebookPath: string): Promise<any> {
+    const content = await fs.readFile(notebookPath, "utf-8");
+    return JSON.parse(content);
+  }
+
+  beforeAll(() => {
+    originalCwd = process.cwd();
+    originalProjectRoot = process.env.GYOSHU_PROJECT_ROOT;
+  });
+
+  afterAll(() => {
+    if (originalProjectRoot !== undefined) {
+      process.env.GYOSHU_PROJECT_ROOT = originalProjectRoot;
+    } else {
+      delete process.env.GYOSHU_PROJECT_ROOT;
+    }
+    process.chdir(originalCwd);
+    clearProjectRootCache();
+  });
+
+  beforeEach(async () => {
+    testDir = await fs.mkdtemp(path.join(os.tmpdir(), "gyoshu-e2e-test-"));
+    process.env.GYOSHU_PROJECT_ROOT = testDir;
+    process.chdir(testDir);
+    clearProjectRootCache();
+    
+    // Create required directories
+    await fs.mkdir(path.join(testDir, "notebooks"), { recursive: true });
+    await fs.mkdir(path.join(testDir, "reports"), { recursive: true });
+  });
+
+  afterEach(async () => {
+    process.chdir(originalCwd);
+    if (testDir) {
+      await fs.rm(testDir, { recursive: true, force: true });
+    }
+    clearProjectRootCache();
+  });
+
+  // 5.4.1: Full research with stages + checkpoints
+  test('full research workflow with stages and checkpoints', async () => {
+    const reportTitle = "e2e-research-test";
+    const runId = "run-001";
+
+    // 1. Create notebook with initial content
+    await createTestNotebook(reportTitle);
+
+    const artifact = await createTestArtifact(
+      `reports/${reportTitle}/data/processed.csv`,
+      "col1,col2\n1,2\n3,4\n5,6"
+    );
+
+    // 3. Save checkpoint at stage boundary (simulating S01_load_data completion)
+    const saveResult = await executeCheckpoint({
+      action: "save",
+      reportTitle,
+      runId,
+      checkpointId: "ckpt-001",
+      researchSessionID: "ses_e2e_test",
+      stageId: "S01_load_data",
+      executionCount: 3,
+      artifacts: [artifact],
+      pythonEnv: {
+        pythonPath: "/usr/bin/python3",
+        packages: ["pandas==2.0.0", "numpy==1.24.0"],
+        platform: "linux",
+      },
+    });
+
+    expect(saveResult.success).toBe(true);
+    expect(saveResult.checkpointId).toBe("ckpt-001");
+    expect(saveResult.stageId).toBe("S01_load_data");
+    expect(saveResult.manifestSha256).toBeDefined();
+
+    // 4. Verify checkpoint saved correctly by validating it
+    const validateResult = await executeCheckpoint({
+      action: "validate",
+      reportTitle,
+      runId,
+      checkpointId: "ckpt-001",
+    });
+
+    expect(validateResult.success).toBe(true);
+    expect(validateResult.valid).toBe(true);
+    expect(validateResult.issues).toEqual([]);
+
+    // 5. Verify checkpoint appears in list action
+    const listResult = await executeCheckpoint({
+      action: "list",
+      reportTitle,
+      runId,
+    });
+
+    expect(listResult.success).toBe(true);
+    expect(listResult.count).toBe(1);
+    
+    const checkpoints = listResult.checkpoints as any[];
+    expect(checkpoints[0].checkpointId).toBe("ckpt-001");
+    expect(checkpoints[0].stageId).toBe("S01_load_data");
+    expect(checkpoints[0].status).toBe("saved");
+    expect(checkpoints[0].artifactCount).toBe(1);
+  });
+
+  // 5.4.2: Watchdog timeout triggers checkpoint + abort
+  test('watchdog timeout triggers emergency checkpoint', async () => {
+    const reportTitle = "e2e-watchdog-test";
+    const runId = "run-001";
+
+    // 1. Create minimal notebook
+    await createTestNotebook(reportTitle);
+
+    // 2. Create emergency checkpoint (simulating watchdog timeout)
+    const emergencyResult = await executeCheckpoint({
+      action: "emergency",
+      reportTitle,
+      runId,
+      stageId: "S02_analyze_data",
+      reason: "timeout",
+      researchSessionID: "ses_watchdog_test",
+      executionCount: 7,
+    });
+
+    expect(emergencyResult.success).toBe(true);
+    expect(emergencyResult.action).toBe("emergency");
+    
+    // 3. Verify status is "interrupted" (per 3.4.3)
+    expect(emergencyResult.status).toBe("interrupted");
+    
+    // 4. Verify reason is "timeout"
+    expect(emergencyResult.reason).toBe("timeout");
+
+    // 5. Verify checkpoint is still resumable
+    const resumeResult = await executeCheckpoint({
+      action: "resume",
+      reportTitle,
+      runId,
+    });
+
+    expect(resumeResult.success).toBe(true);
+    expect(resumeResult.found).toBe(true);
+    
+    const checkpoint = resumeResult.checkpoint as any;
+    expect(checkpoint.status).toBe("interrupted");
+    expect(checkpoint.checkpointId).toBe(emergencyResult.checkpointId);
+  });
+
+  // 5.4.3: Resume from aborted research
+  test('resume from aborted research', async () => {
+    const reportTitle = "e2e-resume-test";
+    const runId = "run-001";
+
+    // 1. Create notebook
+    await createTestNotebook(reportTitle);
+
+    // 2. Create artifact that would survive the "abort"
+    const artifact = await createTestArtifact(
+      `reports/${reportTitle}/models/model.pkl`,
+      "fake pickle data for testing"
+    );
+
+    // 3. Create emergency checkpoint (simulating abort)
+    await executeCheckpoint({
+      action: "emergency",
+      reportTitle,
+      runId,
+      stageId: "S03_train_model",
+      reason: "abort",
+      researchSessionID: "ses_abort_test",
+      executionCount: 15,
+      artifacts: [artifact],
+    });
+
+    // 4. Call resume action
+    const resumeResult = await executeCheckpoint({
+      action: "resume",
+      reportTitle,
+      runId,
+    });
+
+    expect(resumeResult.success).toBe(true);
+    expect(resumeResult.found).toBe(true);
+
+    // 5. Verify rehydration cells are generated
+    expect(resumeResult.rehydrationCells).toBeDefined();
+    expect(Array.isArray(resumeResult.rehydrationCells)).toBe(true);
+    expect((resumeResult.rehydrationCells as string[]).length).toBeGreaterThan(0);
+
+    // 6. Verify correct nextStageId is inferred
+    expect(resumeResult.nextStageId).toBe("S04_");
+
+    const checkpoint = resumeResult.checkpoint as any;
+    expect(checkpoint.stageId).toBe("S03_train_model");
+    expect(checkpoint.status).toBe("interrupted");
+  });
+
+  // 5.4.4: Verify notebook contains checkpoint cells
+  test('checkpoint cells are appended to notebook', async () => {
+    const reportTitle = "e2e-notebook-cell-test";
+    const runId = "run-001";
+
+    // 1. Create empty notebook
+    const notebookPath = await createTestNotebook(reportTitle);
+
+    // 2. Read initial cell count
+    const notebookBefore = await readTestNotebook(notebookPath);
+    const initialCellCount = notebookBefore.cells.length;
+    expect(initialCellCount).toBe(1); // Should have 1 initial cell
+
+    // 3. Save checkpoint
+    const saveResult = await executeCheckpoint({
+      action: "save",
+      reportTitle,
+      runId,
+      checkpointId: "ckpt-notebook-test",
+      researchSessionID: "ses_notebook_test",
+      stageId: "S01_load_data",
+    });
+
+    expect(saveResult.success).toBe(true);
+    expect(saveResult.checkpointCellId).toBeDefined();
+
+    // 4. Read notebook after checkpoint
+    const notebookAfter = await readTestNotebook(notebookPath);
+    
+    // 5. Verify checkpoint cell exists
+    expect(notebookAfter.cells.length).toBe(initialCellCount + 1);
+
+    // 6. Verify cell has gyoshu-checkpoint tag
+    const checkpointCell = notebookAfter.cells[notebookAfter.cells.length - 1];
+    expect(checkpointCell.metadata.tags).toContain("gyoshu-checkpoint");
+    expect(checkpointCell.metadata.gyoshu).toBeDefined();
+    expect(checkpointCell.metadata.gyoshu.type).toBe("checkpoint");
+    expect(checkpointCell.metadata.gyoshu.checkpointId).toBe("ckpt-notebook-test");
+    expect(checkpointCell.metadata.gyoshu.stageId).toBe("S01_load_data");
+  });
+
+  // 5.4.5: Verify artifacts in correct locations
+  test('artifacts stored in correct locations', async () => {
+    const reportTitle = "e2e-artifact-test";
+    const runId = "run-001";
+    const checkpointId = "ckpt-artifact-test";
+
+    // 1. Create notebook
+    await createTestNotebook(reportTitle);
+
+    // 2. Create artifact files at correct paths
+    const dataArtifact = await createTestArtifact(
+      `reports/${reportTitle}/data/processed.parquet`,
+      "fake parquet content"
+    );
+
+    const modelArtifact = await createTestArtifact(
+      `reports/${reportTitle}/models/classifier.joblib`,
+      "fake joblib model"
+    );
+
+    // 3. Create checkpoint with artifact entries
+    const saveResult = await executeCheckpoint({
+      action: "save",
+      reportTitle,
+      runId,
+      checkpointId,
+      researchSessionID: "ses_artifact_test",
+      stageId: "S03_train_model",
+      artifacts: [dataArtifact, modelArtifact],
+    });
+
+    expect(saveResult.success).toBe(true);
+    expect(saveResult.artifactCount).toBe(2);
+
+    // 4. Verify manifest path follows reports/{reportTitle}/checkpoints/{runId}/{checkpointId}/
+    const manifestPath = saveResult.manifestPath as string;
+    expect(manifestPath).toContain(`reports/${reportTitle}/checkpoints/${runId}/${checkpointId}`);
+    expect(manifestPath).toMatch(/checkpoint\.json$/);
+
+    // 5. Verify manifest contains artifact metadata
+    const validateResult = await executeCheckpoint({
+      action: "validate",
+      reportTitle,
+      runId,
+      checkpointId,
+    });
+
+    expect(validateResult.success).toBe(true);
+    expect(validateResult.valid).toBe(true);
+    expect(validateResult.artifactCount).toBe(2);
+    expect(validateResult.issues).toEqual([]);
+
+    // 6. Verify artifacts are accessible and match their hashes
+    const manifestFullPath = path.join(testDir, manifestPath);
+    const manifestContent = JSON.parse(await fs.readFile(manifestFullPath, "utf-8"));
+    
+    expect(manifestContent.artifacts.length).toBe(2);
+    
+    // Check first artifact
+    expect(manifestContent.artifacts[0].relativePath).toBe(dataArtifact.relativePath);
+    expect(manifestContent.artifacts[0].sha256).toBe(dataArtifact.sha256);
+    expect(manifestContent.artifacts[0].sizeBytes).toBe(dataArtifact.sizeBytes);
+
+    // Check second artifact
+    expect(manifestContent.artifacts[1].relativePath).toBe(modelArtifact.relativePath);
+    expect(manifestContent.artifacts[1].sha256).toBe(modelArtifact.sha256);
+    expect(manifestContent.artifacts[1].sizeBytes).toBe(modelArtifact.sizeBytes);
+  });
+
+  // Additional integration test: Multiple checkpoints with resume fallback
+  test('resume falls back to valid checkpoint when latest is invalid', async () => {
+    const reportTitle = "e2e-fallback-test";
+    const runId = "run-001";
+
+    // 1. Create notebook
+    await createTestNotebook(reportTitle);
+
+    // 2. Create valid first checkpoint with artifact
+    const artifact1 = await createTestArtifact(
+      `reports/${reportTitle}/data/stage1.csv`,
+      "stage1 data"
+    );
+
+    await executeCheckpoint({
+      action: "save",
+      reportTitle,
+      runId,
+      checkpointId: "ckpt-001",
+      researchSessionID: "ses_fallback_test",
+      stageId: "S01_load_data",
+      artifacts: [artifact1],
+    });
+
+    // 3. Create second checkpoint with artifact
+    const artifact2 = await createTestArtifact(
+      `reports/${reportTitle}/data/stage2.csv`,
+      "stage2 data"
+    );
+
+    // Small delay to ensure different timestamps
+    await new Promise((r) => setTimeout(r, 50));
+
+    await executeCheckpoint({
+      action: "save",
+      reportTitle,
+      runId,
+      checkpointId: "ckpt-002",
+      researchSessionID: "ses_fallback_test",
+      stageId: "S02_eda_analysis",
+      artifacts: [artifact2],
+    });
+
+    // 4. Corrupt the second checkpoint's artifact (simulate crash/corruption)
+    await fs.writeFile(
+      path.join(testDir, artifact2.relativePath),
+      "corrupted content that changes the hash"
+    );
+
+    // 5. Resume should fall back to first checkpoint
+    const resumeResult = await executeCheckpoint({
+      action: "resume",
+      reportTitle,
+      runId,
+    });
+
+    expect(resumeResult.success).toBe(true);
+    expect(resumeResult.found).toBe(true);
+
+    const checkpoint = resumeResult.checkpoint as any;
+    // Should fall back to ckpt-001 since ckpt-002's artifact is corrupted
+    expect(checkpoint.checkpointId).toBe("ckpt-001");
+    expect(checkpoint.stageId).toBe("S01_load_data");
   });
 });
 

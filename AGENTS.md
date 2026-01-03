@@ -387,6 +387,100 @@ gyoshu-completion({
 
 This is useful for autonomous research workflows where you want both the markdown report and PDF export without a separate step.
 
+## Checkpoint System
+
+Gyoshu provides checkpoint/resume capability for long-running research:
+
+### Stage Protocol
+
+Research is divided into bounded stages (max 4 minutes each):
+- Each stage has a unique ID: `S{NN}_{verb}_{noun}` (e.g., `S01_load_data`)
+- Stages emit markers: `[STAGE:begin]`, `[STAGE:progress]`, `[STAGE:end]`
+- Checkpoints are created at stage boundaries
+
+### Checkpoint Markers
+
+```python
+# Stage boundaries
+print("[STAGE:begin:id=S01_load_data]")
+print("[STAGE:end:id=S01_load_data:duration=120s]")
+
+# Checkpoint saved
+print("[CHECKPOINT:saved:id=ckpt-001:stage=S01_load_data]")
+
+# Rehydrated from checkpoint
+print("[REHYDRATED:from=ckpt-001]")
+```
+
+### Checkpoint Storage
+
+```
+reports/{reportTitle}/checkpoints/{runId}/{checkpointId}/
+└── checkpoint.json    # Manifest with artifact hashes
+```
+
+### Resume Commands
+
+```bash
+# Continue research (auto-detects checkpoints)
+/gyoshu continue my-research
+
+# List checkpoints
+checkpoint-manager(action: "list", reportTitle: "my-research")
+
+# Resume from specific checkpoint
+checkpoint-manager(action: "resume", reportTitle: "my-research", runId: "run-001")
+```
+
+### Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| "No valid checkpoints" | Artifacts may be missing or corrupted. Check `reports/*/checkpoints/` |
+| "Manifest SHA256 mismatch" | Checkpoint file was modified. Use previous checkpoint |
+| "Session locked" | Use `/gyoshu unlock <sessionId>` after verifying no active process |
+
+### Checkpoint Manager Actions
+
+| Action | Description |
+|--------|-------------|
+| `save` | Create new checkpoint at stage boundary |
+| `list` | List all checkpoints for a research/run |
+| `validate` | Verify checkpoint integrity (manifest + artifacts) |
+| `resume` | Find last valid checkpoint and generate rehydration code |
+| `prune` | Keep only last N checkpoints (default: 5) |
+| `emergency` | Fast checkpoint for watchdog/abort (skips validation) |
+
+### Trust Levels
+
+Checkpoints have a trust level that controls security validation:
+
+| Level | Description | Validation |
+|-------|-------------|------------|
+| `local` | Created by this system (default) | Standard validation |
+| `imported` | Copied from another project | + Parent directory symlink check |
+| `untrusted` | From external/unknown source | + Parent symlink check + User confirmation |
+
+**When to use each level:**
+- `local`: Normal checkpoints created during research (automatic)
+- `imported`: When copying checkpoints from a colleague or another machine
+- `untrusted`: When loading checkpoints from the internet or unknown sources
+
+**Security implications:**
+- `local` checkpoints trust the local filesystem
+- `imported` and `untrusted` checkpoints verify that parent directories aren't symlinks (prevents escape attacks)
+- `untrusted` checkpoints show a warning before resume, as rehydration code could execute arbitrary Python
+
+**Example:**
+```bash
+# Save with explicit trust level (for imported checkpoint)
+checkpoint-manager(action: "save", ..., trustLevel: "imported")
+
+# Resume will show warning for non-local checkpoints
+checkpoint-manager(action: "resume", reportTitle: "imported-research")
+# Returns: { ..., trustWarning: "Checkpoint is imported - verify source before resuming" }
+```
+
 ## Project Structure
 
 ### Durable (Tracked in Git)

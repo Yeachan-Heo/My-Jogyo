@@ -42,7 +42,55 @@
 
 Time taken: ~15 minutes
 
-[2026-01-01 17:30] - Task 3: Update Documentation - AGENTS.md, README.md
+[2026-01-02 08:15] - Task 1.1: Define Stage Protocol Spec
+
+### DISCOVERED ISSUES
+- No pre-existing issues discovered
+- The `docs/` directory did not exist - had to create it
+- marker-parser.ts already had STAGE, CHECKPOINT, REHYDRATED markers defined (Task 1.2 was completed prior)
+
+### IMPLEMENTATION DECISIONS
+- Created comprehensive 584-line specification document at `docs/stage-protocol.md`
+- Organized into 8 major sections with table of contents for navigation
+- Stage envelope includes required fields (stageId, goal, inputs, outputs, maxDurationSec) and optional fields (dependencies, retryable, checkpointAfter)
+- Added JSON schema for programmatic validation of stage envelopes
+- Naming convention `S{NN}_{verb}_{noun}` includes common verb vocabulary and anti-pattern examples
+- Idempotence section includes 4 core requirements with code examples: unique artifacts, no mutation, deterministic ops, atomic writes
+- Included idempotence checklist for stage completion verification
+- Artifact path format: `{runId}/{stageId}/{artifactName}` with full directory structure example
+- Duration tiers: Quick (30-60s), Standard (60-240s), Extended (240-480s), Maximum (480-600s)
+- Documented timeout escalation: soft limit (maxDuration) -> grace period -> hard limit (maxDuration + 30s)
+- Added state machine diagram with 8 states and transition rules
+- Included complete marker format reference for STAGE, CHECKPOINT, REHYDRATED markers
+
+### PROBLEMS FOR NEXT TASKS
+- Task 1.3 (Jogyo agent update) should reference this spec for stage execution protocol
+- Task 1.4 (Gyoshu agent update) should reference this spec for stage planning
+- Phase 2 (Checkpoint System) will build upon the artifact naming conventions defined here
+
+### VERIFICATION RESULTS
+- File created: docs/stage-protocol.md (584 lines)
+- Verified all 5 sub-requirements covered:
+  - 1.1.1: Stage envelope format (lines 56-144)
+  - 1.1.2: Naming convention (lines 148-205)
+  - 1.1.3: Idempotence requirements (lines 208-300)
+  - 1.1.4: Artifact naming (lines 304-379)
+  - 1.1.5: Max stage durations (lines 383-454)
+- No tests needed (documentation-only task)
+
+### LEARNINGS
+- [PROMOTE:PAT] Pattern: Stage envelope uses both required and optional fields for flexibility
+  - Evidence: docs/stage-protocol.md:62-78
+  - Use case: Required fields ensure minimum viable stage definition, optional fields allow customization
+- [PROMOTE:CONV] Convention: Documentation uses table of contents with anchor links for navigation
+  - Evidence: docs/stage-protocol.md:11-20
+  - Helps readers find sections quickly in long specs
+- [PROMOTE:PAT] Pattern: Include anti-pattern examples alongside valid examples in specifications
+  - Evidence: docs/stage-protocol.md:195-204 (Invalid Stage IDs table)
+  - Use case: Helps implementers avoid common mistakes
+
+Time taken: ~10 minutes
+
 
 ### DISCOVERED ISSUES
 - AGENTS.md already had the Ephemeral section updated for OS temp directories (lines 443-466)

@@ -207,6 +207,16 @@ export const MARKER_TAXONOMY: Record<string, MarkerDefinition> = {
     category: 'WORKFLOW',
     description: 'Process steps in the workflow',
   },
+  STAGE: {
+    name: 'STAGE',
+    category: 'WORKFLOW',
+    description: 'Bounded execution stage (begin, end, progress). Format: [STAGE:begin|end|progress:id=S01_load_data]',
+  },
+  CHECKPOINT: {
+    name: 'CHECKPOINT',
+    category: 'WORKFLOW',
+    description: 'Durable checkpoint for resume capability. Format: [CHECKPOINT:saved|begin|end|emergency:id=ckpt-001:stage=S02]',
+  },
   CHECK: {
     name: 'CHECK',
     category: 'WORKFLOW',
@@ -226,6 +236,11 @@ export const MARKER_TAXONOMY: Record<string, MarkerDefinition> = {
     name: 'ERROR',
     category: 'WORKFLOW',
     description: 'Error messages for failures',
+  },
+  REHYDRATED: {
+    name: 'REHYDRATED',
+    category: 'WORKFLOW',
+    description: 'Marker indicating session was restored from checkpoint. Format: [REHYDRATED:from=ckpt-xxx]',
   },
 
   // Scientific - Research metadata

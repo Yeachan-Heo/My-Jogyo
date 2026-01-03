@@ -31,8 +31,9 @@ export function validateArtifactPath(artifactPath: string, artifactRoot: string)
   // Normalize and resolve
   const normalized = path.normalize(artifactPath);
   
-  // Reject path traversal
-  if (normalized.includes('..')) {
+  // Reject path traversal - check segments, not string includes
+  const segments = normalized.split(path.sep);
+  if (segments.includes('..')) {
     throw new Error(`Path traversal detected: ${artifactPath}`);
   }
   

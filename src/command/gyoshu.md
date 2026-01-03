@@ -83,7 +83,7 @@ Usage:
   /gyoshu                     Show status and suggestions
   /gyoshu <goal>              Start new research with discovery
   /gyoshu plan <goal>         Create research plan only
-  /gyoshu continue [id]       Continue existing research
+  /gyoshu continue [id]       Continue existing research (with checkpoint resume)
   /gyoshu list [--status X]   List all researches
   /gyoshu search <query>      Search researches & notebooks
   /gyoshu report [id]         Generate research report
@@ -331,6 +331,22 @@ Would you like to:
  ```
  
  Returns manifest with runs, summaries, metadata.
+
+### Step 2.5: Check for Resumable Checkpoints
+
+Check if there are valid checkpoints to resume from:
+
+```
+checkpoint-manager(action: "resume", reportTitle: "[title]")
+```
+
+**If checkpoint found (found: true):**
+- Store checkpoint info for display in Step 3
+- Prepare to offer resume option to user
+
+**If no checkpoint found (found: false):**
+- Continue to Step 3 as before
+- Note that no resumable state exists
  
  ### Step 3: Display Context
  
@@ -377,6 +393,23 @@ Would you like to:
 
 ---
 
+**Resumable Checkpoint Found:** *(display only if checkpoint found in Step 2.5)*
+| Field | Value |
+|-------|-------|
+| Checkpoint ID | [checkpointId] |
+| Stage | [stageId] |
+| Created | [createdAt] |
+| Artifacts | [artifactCount] files |
+
+Options:
+A. Resume from checkpoint (recommended)
+B. Start fresh (ignore checkpoint)
+
+What would you like to do?
+```
+
+**If no checkpoint found, display instead:**
+```
 What would you like to do next?
 ```
 
@@ -386,11 +419,22 @@ What would you like to do next?
    - If yes: continue with that run
    - If no: offer to start a new run or resume ABORTED run
 
-2. Load context from research manifest for @jogyo delegation
+2. **If resuming from checkpoint (user chose Option A):**
+   - Execute the rehydration cell from checkpoint-manager's `rehydrationCells`
+   - The rehydration cell will:
+     - Load saved artifacts (DataFrames, models, etc.)
+     - Restore random seeds if stored
+     - Emit `[REHYDRATED:from=ckpt-xxx]` marker
+   - Continue from the next stage after the checkpoint (`nextStageId`)
+   - Example rehydration execution:
+     ```
+     python-repl(action: "execute", code: [rehydrationCells joined with newlines])
+     ```
 
-3. The REPL environment is preserved - variables from previous executions are still available
-
-4. If REPL was closed, cells will be replayed from the run's notebook
+3. **If starting fresh or no checkpoint:**
+   - Load context from research manifest for @jogyo delegation
+   - The REPL environment is preserved - variables from previous executions are still available
+   - If REPL was closed, cells will be replayed from the run's notebook
 
 ---
 

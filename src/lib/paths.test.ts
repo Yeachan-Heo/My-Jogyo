@@ -19,6 +19,8 @@ import {
   getNotebookPath,
   getReportDir,
   getReportReadmePath,
+  getCheckpointDir,
+  getCheckpointManifestPath,
   getGyoshuRoot,
   getConfigPath,
   getResearchDir,
@@ -1088,6 +1090,136 @@ describe("getReportReadmePath", () => {
     const readmePath = getReportReadmePath("test-report");
 
     expect(path.isAbsolute(readmePath)).toBe(true);
+  });
+});
+
+// =============================================================================
+// CHECKPOINT PATH GETTERS TESTS
+// =============================================================================
+
+describe("getCheckpointDir", () => {
+  test("returns correct checkpoint directory path", () => {
+    const projectDir = path.join(testDir, "checkpoint-dir-test");
+    fs.mkdirSync(projectDir, { recursive: true });
+    process.env.GYOSHU_PROJECT_ROOT = projectDir;
+    clearProjectRootCache();
+
+    const checkpointDir = getCheckpointDir("my-analysis", "run-001");
+
+    expect(checkpointDir).toBe(
+      path.join(projectDir, "reports", "my-analysis", "checkpoints", "run-001")
+    );
+  });
+
+  test("returns absolute path", () => {
+    const projectDir = path.join(testDir, "checkpoint-dir-absolute");
+    fs.mkdirSync(projectDir, { recursive: true });
+    process.env.GYOSHU_PROJECT_ROOT = projectDir;
+    clearProjectRootCache();
+
+    const checkpointDir = getCheckpointDir("test-report", "run-002");
+
+    expect(path.isAbsolute(checkpointDir)).toBe(true);
+  });
+
+  test("is nested under report directory", () => {
+    const projectDir = path.join(testDir, "checkpoint-nesting");
+    fs.mkdirSync(projectDir, { recursive: true });
+    process.env.GYOSHU_PROJECT_ROOT = projectDir;
+    clearProjectRootCache();
+
+    const reportDir = getReportDir("my-analysis");
+    const checkpointDir = getCheckpointDir("my-analysis", "run-001");
+
+    expect(checkpointDir.startsWith(reportDir)).toBe(true);
+  });
+});
+
+describe("getCheckpointManifestPath", () => {
+  test("returns correct checkpoint manifest path", () => {
+    const projectDir = path.join(testDir, "checkpoint-manifest-test");
+    fs.mkdirSync(projectDir, { recursive: true });
+    process.env.GYOSHU_PROJECT_ROOT = projectDir;
+    clearProjectRootCache();
+
+    const manifestPath = getCheckpointManifestPath("my-analysis", "run-001", "ckpt-001");
+
+    expect(manifestPath).toBe(
+      path.join(
+        projectDir,
+        "reports",
+        "my-analysis",
+        "checkpoints",
+        "run-001",
+        "ckpt-001",
+        "checkpoint.json"
+      )
+    );
+  });
+
+  test("returns absolute path", () => {
+    const projectDir = path.join(testDir, "checkpoint-manifest-absolute");
+    fs.mkdirSync(projectDir, { recursive: true });
+    process.env.GYOSHU_PROJECT_ROOT = projectDir;
+    clearProjectRootCache();
+
+    const manifestPath = getCheckpointManifestPath("test-report", "run-002", "ckpt-003");
+
+    expect(path.isAbsolute(manifestPath)).toBe(true);
+  });
+
+  test("is nested under checkpoint directory", () => {
+    const projectDir = path.join(testDir, "manifest-nesting");
+    fs.mkdirSync(projectDir, { recursive: true });
+    process.env.GYOSHU_PROJECT_ROOT = projectDir;
+    clearProjectRootCache();
+
+    const checkpointDir = getCheckpointDir("my-analysis", "run-001");
+    const manifestPath = getCheckpointManifestPath("my-analysis", "run-001", "ckpt-001");
+
+    expect(manifestPath.startsWith(checkpointDir)).toBe(true);
+  });
+
+  test("ends with checkpoint.json", () => {
+    const projectDir = path.join(testDir, "manifest-filename");
+    fs.mkdirSync(projectDir, { recursive: true });
+    process.env.GYOSHU_PROJECT_ROOT = projectDir;
+    clearProjectRootCache();
+
+    const manifestPath = getCheckpointManifestPath("my-analysis", "run-001", "ckpt-001");
+
+    expect(manifestPath.endsWith("checkpoint.json")).toBe(true);
+  });
+});
+
+describe("checkpoint path consistency", () => {
+  test("checkpoint paths use consistent report root", () => {
+    const projectDir = path.join(testDir, "checkpoint-consistency");
+    fs.mkdirSync(projectDir, { recursive: true });
+    process.env.GYOSHU_PROJECT_ROOT = projectDir;
+    clearProjectRootCache();
+
+    const reportsRoot = getReportsRootDir();
+    const checkpointDir = getCheckpointDir("my-analysis", "run-001");
+    const manifestPath = getCheckpointManifestPath("my-analysis", "run-001", "ckpt-001");
+
+    expect(checkpointDir.startsWith(reportsRoot)).toBe(true);
+    expect(manifestPath.startsWith(reportsRoot)).toBe(true);
+  });
+
+  test("different checkpoints have different paths", () => {
+    const projectDir = path.join(testDir, "checkpoint-uniqueness");
+    fs.mkdirSync(projectDir, { recursive: true });
+    process.env.GYOSHU_PROJECT_ROOT = projectDir;
+    clearProjectRootCache();
+
+    const manifest1 = getCheckpointManifestPath("my-analysis", "run-001", "ckpt-001");
+    const manifest2 = getCheckpointManifestPath("my-analysis", "run-001", "ckpt-002");
+    const manifest3 = getCheckpointManifestPath("my-analysis", "run-002", "ckpt-001");
+
+    expect(manifest1).not.toBe(manifest2);
+    expect(manifest1).not.toBe(manifest3);
+    expect(manifest2).not.toBe(manifest3);
   });
 });
 

@@ -18,5 +18,8 @@
     "jupyter",
     "repl"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "zod": "^4.3.4"
+  }
 }
