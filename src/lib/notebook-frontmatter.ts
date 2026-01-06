@@ -55,6 +55,72 @@ export interface RunEntry {
   notes?: string;
 }
 
+// =============================================================================
+// GOAL CONTRACT TYPES (Two-Gate System)
+// =============================================================================
+
+/**
+ * Kind of acceptance criterion for goal completion.
+ */
+export type AcceptanceCriteriaKind =
+  | "metric_threshold"   // e.g., accuracy >= 0.90
+  | "marker_required"    // e.g., [METRIC:baseline_accuracy] must exist
+  | "artifact_exists"    // e.g., model.pkl must be created
+  | "finding_count";     // e.g., at least 3 verified findings
+
+/**
+ * Comparison operators for metric thresholds.
+ */
+export type ComparisonOperator = ">=" | ">" | "<=" | "<" | "==" | "!=";
+
+/**
+ * Single acceptance criterion for goal completion.
+ *
+ * Kept flat (no nested objects) for YAML parser compatibility.
+ */
+export interface AcceptanceCriterion {
+  /** Unique identifier, e.g., "AC1", "AC2" */
+  id: string;
+  /** Type of acceptance criterion */
+  kind: AcceptanceCriteriaKind;
+  /** Human-readable description */
+  description?: string;
+  // For metric_threshold
+  /** Metric name, e.g., "cv_accuracy_mean" */
+  metric?: string;
+  /** Comparison operator */
+  op?: ComparisonOperator;
+  /** Target threshold value */
+  target?: number;
+  // For marker_required
+  /** Marker pattern, e.g., "METRIC:baseline_accuracy" */
+  marker?: string;
+  // For artifact_exists
+  /** Glob pattern for artifact, e.g., "*.pkl" */
+  artifactPattern?: string;
+  // For finding_count
+  /** Minimum required findings */
+  minCount?: number;
+}
+
+/**
+ * Goal contract defining acceptance criteria for research completion.
+ *
+ * Stored in notebook frontmatter under gyoshu.goal_contract.
+ */
+export interface GoalContract {
+  /** Schema version for goal contracts (currently 1) */
+  version: number;
+  /** Original user goal text */
+  goal_text: string;
+  /** Goal classification, e.g., "ml_classification", "eda", "hypothesis_test" */
+  goal_type?: string;
+  /** List of acceptance criteria */
+  acceptance_criteria: AcceptanceCriterion[];
+  /** Maximum attempts before escalation (default: 3) */
+  max_goal_attempts?: number;
+}
+
 /**
  * Gyoshu-specific frontmatter stored in the `gyoshu:` namespace.
  */
@@ -81,6 +147,8 @@ export interface GyoshuFrontmatter {
   outputs_dir?: string;
   /** Run history - bounded to last 10 runs (optional) */
   runs?: RunEntry[];
+  /** Goal contract for Two-Gate acceptance criteria (optional) */
+  goal_contract?: GoalContract;
 }
 
 /**
@@ -119,30 +187,46 @@ export function parseSimpleYaml(yamlString: string): Record<string, unknown> {
   let currentArray: unknown[] | null = null;
   let currentArrayKey: string | null = null;
   let arrayItemBuffer: Record<string, unknown> | null = null;
+  let level3Object: Record<string, unknown> | null = null;
+  let level3Key: string | null = null;
+  let level3Array: unknown[] | null = null;
+  let level3ArrayKey: string | null = null;
+  let level3ArrayItemBuffer: Record<string, unknown> | null = null;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const trimmed = line.trimEnd();
 
-    // Skip empty lines and comments
     if (trimmed === "" || trimmed.startsWith("#")) {
       continue;
     }
 
-    // Detect indentation level
     const indent = line.length - line.trimStart().length;
 
-    // Check for array item start (- key: value or just - value)
-    const arrayItemMatch = trimmed.match(/^(\s*)- (.+)$/);
+    const arrayItemMatch = trimmed.match(/^\s*- (.+)$/);
     if (arrayItemMatch) {
-      const itemContent = arrayItemMatch[2].trim();
-
-      // Check if this is a key-value pair within an array item
+      const itemContent = arrayItemMatch[1].trim();
       const kvMatch = itemContent.match(/^([^:]+):\s*(.*)$/);
+
+      if (level3ArrayKey && level3Array) {
+        if (kvMatch) {
+          if (level3ArrayItemBuffer) {
+            level3Array.push(level3ArrayItemBuffer);
+          }
+          level3ArrayItemBuffer = {};
+          level3ArrayItemBuffer[kvMatch[1].trim()] = parseYamlValue(kvMatch[2].trim());
+        } else {
+          if (level3ArrayItemBuffer) {
+            level3Array.push(level3ArrayItemBuffer);
+            level3ArrayItemBuffer = null;
+          }
+          level3Array.push(parseYamlValue(itemContent));
+        }
+        continue;
+      }
+
       if (kvMatch && currentArrayKey) {
-        // Start of a new object in the array
         if (arrayItemBuffer) {
-          // Save previous buffer
           currentArray?.push(arrayItemBuffer);
         }
         arrayItemBuffer = {};
@@ -150,7 +234,6 @@ export function parseSimpleYaml(yamlString: string): Record<string, unknown> {
         const value = parseYamlValue(kvMatch[2].trim());
         arrayItemBuffer[key] = value;
       } else if (currentArrayKey && currentArray) {
-        // Simple string array item
         if (arrayItemBuffer) {
           currentArray.push(arrayItemBuffer);
           arrayItemBuffer = null;
@@ -160,8 +243,15 @@ export function parseSimpleYaml(yamlString: string): Record<string, unknown> {
       continue;
     }
 
-    // Check if we're continuing an object array item (indented key: value under -)
-    if (arrayItemBuffer && indent >= 6) {
+    if (level3ArrayItemBuffer && indent >= 8) {
+      const kvMatch = trimmed.match(/^([^:]+):\s*(.*)$/);
+      if (kvMatch) {
+        level3ArrayItemBuffer[kvMatch[1].trim()] = parseYamlValue(kvMatch[2].trim());
+        continue;
+      }
+    }
+
+    if (arrayItemBuffer && indent >= 6 && !level3Object) {
       const kvMatch = trimmed.match(/^([^:]+):\s*(.*)$/);
       if (kvMatch) {
         const key = kvMatch[1].trim();
@@ -171,62 +261,103 @@ export function parseSimpleYaml(yamlString: string): Record<string, unknown> {
       }
     }
 
-    // Check for key: value pair
     const kvMatch = trimmed.match(/^([^:]+):\s*(.*)$/);
     if (kvMatch) {
       const key = kvMatch[1].trim();
       const value = kvMatch[2].trim();
 
-      // Finish any pending array
-      if (currentArray && currentArrayKey) {
-        if (arrayItemBuffer) {
-          currentArray.push(arrayItemBuffer);
-          arrayItemBuffer = null;
+      if (level3Array && level3ArrayKey) {
+        if (level3ArrayItemBuffer) {
+          level3Array.push(level3ArrayItemBuffer);
+          level3ArrayItemBuffer = null;
         }
-        if (currentObject) {
-          currentObject[currentArrayKey] = currentArray;
-        } else {
-          result[currentArrayKey] = currentArray;
+        if (level3Object) {
+          level3Object[level3ArrayKey] = level3Array;
         }
-        currentArray = null;
-        currentArrayKey = null;
+        level3Array = null;
+        level3ArrayKey = null;
       }
 
-      // Handle based on indentation
       if (indent === 0) {
-        // Top-level key
+        if (level3Object && level3Key && currentObject) {
+          currentObject[level3Key] = level3Object;
+          level3Object = null;
+          level3Key = null;
+        }
+        if (currentArray && currentArrayKey) {
+          if (arrayItemBuffer) {
+            currentArray.push(arrayItemBuffer);
+            arrayItemBuffer = null;
+          }
+          if (currentObject) {
+            currentObject[currentArrayKey] = currentArray;
+          } else {
+            result[currentArrayKey] = currentArray;
+          }
+          currentArray = null;
+          currentArrayKey = null;
+        }
         currentObject = null;
         currentKey = key;
 
         if (value === "") {
-          // Start of a nested object or array
-          // Look ahead to see if it's an array
           if (i + 1 < lines.length && lines[i + 1].trim().startsWith("-")) {
             currentArray = [];
             currentArrayKey = key;
           } else {
-            // Nested object
             currentObject = {};
             result[key] = currentObject;
           }
         } else {
           result[key] = parseYamlValue(value);
         }
-      } else if (indent >= 2 && currentObject) {
-        // Nested key within an object
+      } else if (indent === 2 && currentObject) {
+        if (level3Object && level3Key) {
+          currentObject[level3Key] = level3Object;
+          level3Object = null;
+          level3Key = null;
+        }
+        if (currentArray && currentArrayKey) {
+          if (arrayItemBuffer) {
+            currentArray.push(arrayItemBuffer);
+            arrayItemBuffer = null;
+          }
+          currentObject[currentArrayKey] = currentArray;
+          currentArray = null;
+          currentArrayKey = null;
+        }
         if (value === "") {
-          // Check if it's an array
           if (i + 1 < lines.length && lines[i + 1].trim().startsWith("-")) {
             currentArray = [];
             currentArrayKey = key;
           } else {
-            currentObject[key] = null;
+            level3Object = {};
+            level3Key = key;
           }
         } else {
           currentObject[key] = parseYamlValue(value);
         }
+      } else if (indent === 4 && level3Object) {
+        if (level3Array && level3ArrayKey) {
+          if (level3ArrayItemBuffer) {
+            level3Array.push(level3ArrayItemBuffer);
+            level3ArrayItemBuffer = null;
+          }
+          level3Object[level3ArrayKey] = level3Array;
+          level3Array = null;
+          level3ArrayKey = null;
+        }
+        if (value === "") {
+          if (i + 1 < lines.length && lines[i + 1].trim().startsWith("-")) {
+            level3Array = [];
+            level3ArrayKey = key;
+          } else {
+            level3Object[key] = null;
+          }
+        } else {
+          level3Object[key] = parseYamlValue(value);
+        }
       } else if (indent >= 2 && !currentObject && value === "") {
-        // This might be a top-level array
         if (i + 1 < lines.length && lines[i + 1].trim().startsWith("-")) {
           currentArray = [];
           currentArrayKey = key;
@@ -235,7 +366,17 @@ export function parseSimpleYaml(yamlString: string): Record<string, unknown> {
     }
   }
 
-  // Finish any pending array
+  if (level3Array && level3ArrayKey) {
+    if (level3ArrayItemBuffer) {
+      level3Array.push(level3ArrayItemBuffer);
+    }
+    if (level3Object) {
+      level3Object[level3ArrayKey] = level3Array;
+    }
+  }
+  if (level3Object && level3Key && currentObject) {
+    currentObject[level3Key] = level3Object;
+  }
   if (currentArray && currentArrayKey) {
     if (arrayItemBuffer) {
       currentArray.push(arrayItemBuffer);
@@ -296,7 +437,6 @@ export function serializeToYaml(obj: Record<string, unknown>): string {
     }
 
     if (typeof value === "object" && !Array.isArray(value)) {
-      // Nested object
       lines.push(`${key}:`);
       const nested = value as Record<string, unknown>;
       for (const [nestedKey, nestedValue] of Object.entries(nested)) {
@@ -305,11 +445,9 @@ export function serializeToYaml(obj: Record<string, unknown>): string {
         }
 
         if (Array.isArray(nestedValue)) {
-          // Array within nested object
           lines.push(`  ${nestedKey}:`);
           for (const item of nestedValue) {
             if (typeof item === "object" && item !== null) {
-              // Object array item
               const objItem = item as Record<string, unknown>;
               const entries = Object.entries(objItem);
               if (entries.length > 0) {
@@ -323,8 +461,38 @@ export function serializeToYaml(obj: Record<string, unknown>): string {
                 }
               }
             } else {
-              // Simple array item
               lines.push(`    - ${formatYamlValue(item)}`);
+            }
+          }
+        } else if (typeof nestedValue === "object") {
+          lines.push(`  ${nestedKey}:`);
+          const level3Obj = nestedValue as Record<string, unknown>;
+          for (const [l3Key, l3Value] of Object.entries(level3Obj)) {
+            if (l3Value === null || l3Value === undefined) {
+              continue;
+            }
+            if (Array.isArray(l3Value)) {
+              lines.push(`    ${l3Key}:`);
+              for (const item of l3Value) {
+                if (typeof item === "object" && item !== null) {
+                  const objItem = item as Record<string, unknown>;
+                  const entries = Object.entries(objItem);
+                  if (entries.length > 0) {
+                    const [firstKey, firstValue] = entries[0];
+                    lines.push(`      - ${firstKey}: ${formatYamlValue(firstValue)}`);
+                    for (let i = 1; i < entries.length; i++) {
+                      const [k, v] = entries[i];
+                      if (v !== null && v !== undefined) {
+                        lines.push(`        ${k}: ${formatYamlValue(v)}`);
+                      }
+                    }
+                  }
+                } else {
+                  lines.push(`      - ${formatYamlValue(item)}`);
+                }
+              }
+            } else {
+              lines.push(`    ${l3Key}: ${formatYamlValue(l3Value)}`);
             }
           }
         } else {
@@ -332,7 +500,6 @@ export function serializeToYaml(obj: Record<string, unknown>): string {
         }
       }
     } else if (Array.isArray(value)) {
-      // Top-level array
       lines.push(`${key}:`);
       for (const item of value) {
         if (typeof item === "object" && item !== null) {
@@ -542,6 +709,21 @@ export function extractFrontmatter(notebook: Notebook): GyoshuFrontmatter | null
       frontmatter.runs = gyoshu.runs as RunEntry[];
     }
 
+    if (gyoshu.goal_contract && typeof gyoshu.goal_contract === "object") {
+      const gc = gyoshu.goal_contract as Record<string, unknown>;
+      if (typeof gc.version === "number" && typeof gc.goal_text === "string") {
+        frontmatter.goal_contract = {
+          version: gc.version,
+          goal_text: gc.goal_text,
+          goal_type: typeof gc.goal_type === "string" ? gc.goal_type : undefined,
+          acceptance_criteria: Array.isArray(gc.acceptance_criteria)
+            ? (gc.acceptance_criteria as AcceptanceCriterion[])
+            : [],
+          max_goal_attempts: typeof gc.max_goal_attempts === "number" ? gc.max_goal_attempts : undefined,
+        };
+      }
+    }
+
     return frontmatter;
   } catch (error) {
     console.debug(`[notebook-frontmatter] Failed to parse YAML in extractFrontmatter: ${error}`);
@@ -749,6 +931,91 @@ export function validateFrontmatter(
         }
         if (!["in_progress", "completed", "failed"].includes(run.status)) {
           errors.push(`Run ${i}: invalid status: ${run.status}`);
+        }
+      }
+    }
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors,
+  };
+}
+
+const VALID_CRITERIA_KINDS: AcceptanceCriteriaKind[] = [
+  "metric_threshold",
+  "marker_required",
+  "artifact_exists",
+  "finding_count",
+];
+
+const VALID_OPERATORS: ComparisonOperator[] = [">=", ">", "<=", "<", "==", "!="];
+
+export function validateGoalContract(
+  contract: GoalContract
+): { isValid: boolean; errors: string[] } {
+  const errors: string[] = [];
+
+  if (contract.version !== 1) {
+    errors.push(`Unsupported goal contract version: ${contract.version}. Expected: 1`);
+  }
+
+  if (!contract.goal_text || typeof contract.goal_text !== "string") {
+    errors.push("Missing or invalid goal_text");
+  }
+
+  if (contract.goal_type !== undefined && typeof contract.goal_type !== "string") {
+    errors.push("Invalid goal_type (must be string if provided)");
+  }
+
+  if (contract.max_goal_attempts !== undefined) {
+    if (typeof contract.max_goal_attempts !== "number" || contract.max_goal_attempts < 1) {
+      errors.push("Invalid max_goal_attempts (must be positive number if provided)");
+    }
+  }
+
+  if (!Array.isArray(contract.acceptance_criteria)) {
+    errors.push("acceptance_criteria must be an array");
+  } else {
+    for (let i = 0; i < contract.acceptance_criteria.length; i++) {
+      const criterion = contract.acceptance_criteria[i];
+      const prefix = `Criterion ${i}`;
+
+      if (!criterion.id || typeof criterion.id !== "string") {
+        errors.push(`${prefix}: missing or invalid id`);
+      }
+
+      if (!VALID_CRITERIA_KINDS.includes(criterion.kind)) {
+        errors.push(`${prefix}: invalid kind '${criterion.kind}'`);
+      }
+
+      if (criterion.kind === "metric_threshold") {
+        if (!criterion.metric || typeof criterion.metric !== "string") {
+          errors.push(`${prefix}: metric_threshold requires 'metric' field`);
+        }
+        if (!criterion.op || !VALID_OPERATORS.includes(criterion.op)) {
+          errors.push(`${prefix}: metric_threshold requires valid 'op' field`);
+        }
+        if (typeof criterion.target !== "number") {
+          errors.push(`${prefix}: metric_threshold requires 'target' number`);
+        }
+      }
+
+      if (criterion.kind === "marker_required") {
+        if (!criterion.marker || typeof criterion.marker !== "string") {
+          errors.push(`${prefix}: marker_required requires 'marker' field`);
+        }
+      }
+
+      if (criterion.kind === "artifact_exists") {
+        if (!criterion.artifactPattern || typeof criterion.artifactPattern !== "string") {
+          errors.push(`${prefix}: artifact_exists requires 'artifactPattern' field`);
+        }
+      }
+
+      if (criterion.kind === "finding_count") {
+        if (typeof criterion.minCount !== "number" || criterion.minCount < 0) {
+          errors.push(`${prefix}: finding_count requires 'minCount' non-negative number`);
         }
       }
     }

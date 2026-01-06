@@ -7,14 +7,17 @@ import {
   updateFrontmatter,
   ensureFrontmatterCell,
   validateFrontmatter,
+  validateGoalContract,
   hasFrontmatter,
   getCurrentRun,
   addRun,
   updateRun,
   GyoshuFrontmatter,
   RunEntry,
-} from "./notebook-frontmatter";
-import { Notebook } from "./cell-identity";
+  GoalContract,
+  AcceptanceCriterion,
+} from "../src/lib/notebook-frontmatter";
+import { Notebook } from "../src/lib/cell-identity";
 
 function createTestNotebook(cells: Notebook["cells"] = []): Notebook {
   return {
@@ -788,5 +791,302 @@ describe("updateRun", () => {
     });
     const updated = updateRun(frontmatter, "run-001", { status: "completed" });
     expect(updated.updated).not.toBe(frontmatter.updated);
+  });
+});
+
+function createValidGoalContract(overrides: Partial<GoalContract> = {}): GoalContract {
+  return {
+    version: 1,
+    goal_text: "Build a classification model with 90% accuracy",
+    goal_type: "ml_classification",
+    acceptance_criteria: [
+      {
+        id: "AC1",
+        kind: "metric_threshold",
+        metric: "cv_accuracy_mean",
+        op: ">=",
+        target: 0.9,
+      },
+    ],
+    max_goal_attempts: 3,
+    ...overrides,
+  };
+}
+
+describe("GoalContract parsing", () => {
+  it("parses goal_contract from frontmatter YAML", () => {
+    const yaml = `
+gyoshu:
+  schema_version: 1
+  status: active
+  created: "2026-01-01T10:00:00Z"
+  updated: "2026-01-01T12:00:00Z"
+  tags:
+    - test
+  goal_contract:
+    version: 1
+    goal_text: "Build model with 90% accuracy"
+    goal_type: ml_classification
+    max_goal_attempts: 3
+    acceptance_criteria:
+      - id: AC1
+        kind: metric_threshold
+        metric: cv_accuracy_mean
+        op: ">="
+        target: 0.9
+      - id: AC2
+        kind: marker_required
+        marker: "METRIC:baseline_accuracy"
+`;
+    const result = parseSimpleYaml(yaml);
+    const gyoshu = result.gyoshu as Record<string, unknown>;
+    expect(gyoshu.goal_contract).toBeDefined();
+    const gc = gyoshu.goal_contract as Record<string, unknown>;
+    expect(gc.version).toBe(1);
+    expect(gc.goal_text).toBe("Build model with 90% accuracy");
+    expect(gc.goal_type).toBe("ml_classification");
+    expect(gc.max_goal_attempts).toBe(3);
+    const criteria = gc.acceptance_criteria as Record<string, unknown>[];
+    expect(criteria).toHaveLength(2);
+    expect(criteria[0].id).toBe("AC1");
+    expect(criteria[0].kind).toBe("metric_threshold");
+    expect(criteria[0].target).toBe(0.9);
+    expect(criteria[1].id).toBe("AC2");
+    expect(criteria[1].kind).toBe("marker_required");
+  });
+
+  it("extracts goal_contract via extractFrontmatter", () => {
+    const notebook = createTestNotebook([
+      createFrontmatterCell(`---
+gyoshu:
+  schema_version: 1
+  status: active
+  created: "2026-01-01T10:00:00Z"
+  updated: "2026-01-01T12:00:00Z"
+  tags:
+    - test
+  goal_contract:
+    version: 1
+    goal_text: "Analyze dataset"
+    acceptance_criteria:
+      - id: AC1
+        kind: finding_count
+        minCount: 3
+---`),
+    ]);
+    const frontmatter = extractFrontmatter(notebook);
+    expect(frontmatter).not.toBe(null);
+    expect(frontmatter!.goal_contract).toBeDefined();
+    expect(frontmatter!.goal_contract!.version).toBe(1);
+    expect(frontmatter!.goal_contract!.goal_text).toBe("Analyze dataset");
+    expect(frontmatter!.goal_contract!.acceptance_criteria).toHaveLength(1);
+    expect(frontmatter!.goal_contract!.acceptance_criteria[0].kind).toBe("finding_count");
+    expect(frontmatter!.goal_contract!.acceptance_criteria[0].minCount).toBe(3);
+  });
+
+  it("preserves backward compatibility (no goal_contract)", () => {
+    const notebook = createTestNotebook([
+      createFrontmatterCell(`---
+gyoshu:
+  schema_version: 1
+  workspace: test
+  slug: test
+  status: active
+  created: "2026-01-01T10:00:00Z"
+  updated: "2026-01-01T12:00:00Z"
+  tags:
+    - legacy
+---`),
+    ]);
+    const frontmatter = extractFrontmatter(notebook);
+    expect(frontmatter).not.toBe(null);
+    expect(frontmatter!.goal_contract).toBeUndefined();
+    expect(frontmatter!.workspace).toBe("test");
+    expect(frontmatter!.tags).toEqual(["legacy"]);
+  });
+});
+
+describe("GoalContract serialization", () => {
+  it("serializes goal_contract to YAML", () => {
+    const obj = {
+      gyoshu: {
+        schema_version: 1,
+        status: "active",
+        goal_contract: {
+          version: 1,
+          goal_text: "Test goal",
+          acceptance_criteria: [
+            { id: "AC1", kind: "metric_threshold", metric: "accuracy", op: ">=", target: 0.9 },
+          ],
+        },
+      },
+    };
+    const yaml = serializeToYaml(obj);
+    expect(yaml).toContain("goal_contract:");
+    expect(yaml).toContain("version: 1");
+    expect(yaml).toContain("goal_text: Test goal");
+    expect(yaml).toContain("acceptance_criteria:");
+    expect(yaml).toContain("- id: AC1");
+    expect(yaml).toContain("kind: metric_threshold");
+    expect(yaml).toContain("target: 0.9");
+  });
+
+  it("round-trips goal_contract through serialize/parse", () => {
+    const original = {
+      gyoshu: {
+        schema_version: 1,
+        status: "active",
+        created: "2026-01-01T10:00:00Z",
+        updated: "2026-01-01T12:00:00Z",
+        tags: ["test"],
+        goal_contract: {
+          version: 1,
+          goal_text: "Build classifier",
+          goal_type: "ml_classification",
+          max_goal_attempts: 3,
+          acceptance_criteria: [
+            { id: "AC1", kind: "metric_threshold", metric: "cv_accuracy_mean", op: ">=", target: 0.85 },
+            { id: "AC2", kind: "marker_required", marker: "METRIC:baseline" },
+          ],
+        },
+      },
+    };
+    const yaml = serializeToYaml(original);
+    const parsed = parseSimpleYaml(yaml);
+    const gyoshu = parsed.gyoshu as Record<string, unknown>;
+    const gc = gyoshu.goal_contract as Record<string, unknown>;
+    expect(gc.version).toBe(1);
+    expect(gc.goal_text).toBe("Build classifier");
+    expect(gc.goal_type).toBe("ml_classification");
+    expect(gc.max_goal_attempts).toBe(3);
+    const criteria = gc.acceptance_criteria as Record<string, unknown>[];
+    expect(criteria).toHaveLength(2);
+    expect(criteria[0].target).toBe(0.85);
+    expect(criteria[1].marker).toBe("METRIC:baseline");
+  });
+});
+
+describe("validateGoalContract", () => {
+  it("validates correct goal contract", () => {
+    const contract = createValidGoalContract();
+    const result = validateGoalContract(contract);
+    expect(result.isValid).toBe(true);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it("rejects unsupported version", () => {
+    const contract = createValidGoalContract({ version: 2 });
+    const result = validateGoalContract(contract);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some((e) => e.includes("Unsupported goal contract version"))).toBe(true);
+  });
+
+  it("rejects missing goal_text", () => {
+    const contract = { ...createValidGoalContract(), goal_text: "" };
+    const result = validateGoalContract(contract);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some((e) => e.includes("goal_text"))).toBe(true);
+  });
+
+  it("validates metric_threshold requires metric, op, target", () => {
+    const contract = createValidGoalContract({
+      acceptance_criteria: [
+        { id: "AC1", kind: "metric_threshold" } as AcceptanceCriterion,
+      ],
+    });
+    const result = validateGoalContract(contract);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some((e) => e.includes("metric"))).toBe(true);
+    expect(result.errors.some((e) => e.includes("op"))).toBe(true);
+    expect(result.errors.some((e) => e.includes("target"))).toBe(true);
+  });
+
+  it("validates marker_required requires marker", () => {
+    const contract = createValidGoalContract({
+      acceptance_criteria: [
+        { id: "AC1", kind: "marker_required" } as AcceptanceCriterion,
+      ],
+    });
+    const result = validateGoalContract(contract);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some((e) => e.includes("marker"))).toBe(true);
+  });
+
+  it("validates artifact_exists requires artifactPattern", () => {
+    const contract = createValidGoalContract({
+      acceptance_criteria: [
+        { id: "AC1", kind: "artifact_exists" } as AcceptanceCriterion,
+      ],
+    });
+    const result = validateGoalContract(contract);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some((e) => e.includes("artifactPattern"))).toBe(true);
+  });
+
+  it("validates finding_count requires minCount", () => {
+    const contract = createValidGoalContract({
+      acceptance_criteria: [
+        { id: "AC1", kind: "finding_count" } as AcceptanceCriterion,
+      ],
+    });
+    const result = validateGoalContract(contract);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some((e) => e.includes("minCount"))).toBe(true);
+  });
+
+  it("rejects invalid criterion kind", () => {
+    const contract = createValidGoalContract({
+      acceptance_criteria: [
+        { id: "AC1", kind: "invalid_kind" as any },
+      ],
+    });
+    const result = validateGoalContract(contract);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some((e) => e.includes("invalid kind"))).toBe(true);
+  });
+
+  it("rejects missing criterion id", () => {
+    const contract = createValidGoalContract({
+      acceptance_criteria: [
+        { id: "", kind: "finding_count", minCount: 1 } as AcceptanceCriterion,
+      ],
+    });
+    const result = validateGoalContract(contract);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some((e) => e.includes("missing or invalid id"))).toBe(true);
+  });
+
+  it("accepts all valid criteria kinds", () => {
+    const contract = createValidGoalContract({
+      acceptance_criteria: [
+        { id: "AC1", kind: "metric_threshold", metric: "acc", op: ">=", target: 0.9 },
+        { id: "AC2", kind: "marker_required", marker: "METRIC:test" },
+        { id: "AC3", kind: "artifact_exists", artifactPattern: "*.pkl" },
+        { id: "AC4", kind: "finding_count", minCount: 2 },
+      ],
+    });
+    const result = validateGoalContract(contract);
+    expect(result.isValid).toBe(true);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it("accepts all valid comparison operators", () => {
+    const operators = [">=", ">", "<=", "<", "==", "!="] as const;
+    for (const op of operators) {
+      const contract = createValidGoalContract({
+        acceptance_criteria: [
+          { id: "AC1", kind: "metric_threshold", metric: "acc", op, target: 0.5 },
+        ],
+      });
+      const result = validateGoalContract(contract);
+      expect(result.isValid).toBe(true);
+    }
+  });
+
+  it("rejects invalid max_goal_attempts", () => {
+    const contract = createValidGoalContract({ max_goal_attempts: 0 });
+    const result = validateGoalContract(contract);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some((e) => e.includes("max_goal_attempts"))).toBe(true);
   });
 });

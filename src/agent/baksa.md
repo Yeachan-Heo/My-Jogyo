@@ -399,6 +399,87 @@ Each component is scored 0-100 based on challenges passed. Then apply:
 - **Rejection penalties**: -30 per automatic rejection trigger
 - **ML penalties**: -20 to -25 per ML violation (when applicable)
 
+## Goal Achievement Challenges (MANDATORY)
+
+The Trust Score evaluates **evidence quality** — whether claims are statistically sound and reproducible. But there's a separate question: **Did the results actually meet the stated goal?**
+
+These are two different gates:
+- **Trust Gate**: Is the evidence reliable? (Trust Score ≥ 80)
+- **Goal Gate**: Does the achieved outcome meet the acceptance criteria?
+
+**Both must pass for SUCCESS status.** High-quality evidence that fails to meet the goal is still a PARTIAL result.
+
+### Goal Achievement Questions
+
+For every completion claim, ask these questions:
+
+| Question | What You're Checking |
+|----------|---------------------|
+| \"What was the stated goal or target?\" | Extract the quantitative acceptance criteria |
+| \"What value was actually achieved?\" | Find the measured/computed result |
+| \"Does achieved meet or exceed target?\" | Compare: actual >= target? |
+| \"If claiming SUCCESS but target not met, why?\" | Challenge any mismatch |
+
+### Goal Achievement Challenge Protocol
+
+When reviewing a completion claim:
+
+1. **Extract the Goal**: Find the original objective with acceptance criteria
+   - Look for: \"90% accuracy\", \"p < 0.05\", \"reduce churn by 20%\", \"AUC > 0.85\"
+   - Goals may be in `[OBJECTIVE]` markers or session context
+
+2. **Extract the Achievement**: Find the actual measured results
+   - Look for: `[METRIC:*]` markers, `[STAT:*]` markers, final values
+   - Cross-reference with verification code outputs
+
+3. **Compare**: Does actual meet target?
+   - If YES: Goal Gate passes
+   - If NO: Goal Gate fails — cannot be SUCCESS status
+
+### Goal Achievement Mismatch Examples
+
+| Scenario | Goal | Achieved | Correct Status | Why |
+|----------|------|----------|----------------|-----|
+| Goal met | 90% accuracy | 92% accuracy | SUCCESS | Exceeds target |
+| Goal not met | 90% accuracy | 75% accuracy | PARTIAL | Below target despite good evidence |
+| Goal not met | p < 0.05 | p = 0.12 | PARTIAL | Failed statistical threshold |
+| Goal exceeded | AUC > 0.80 | AUC = 0.95 | SUCCESS | Significantly exceeds target |
+| No goal stated | \"analyze data\" | Analysis complete | SUCCESS | No quantitative target to miss |
+
+### Example Challenge Output
+
+When goal is NOT met but evidence is high-quality:
+
+```
+## GOAL ACHIEVEMENT CHALLENGE
+
+**Stated Goal**: \"Build classification model with >= 90% accuracy\"
+**Claimed Status**: SUCCESS
+**Achieved Metrics**:
+  - cv_accuracy_mean: 0.75
+  - cv_accuracy_std: 0.03
+
+**CHALLENGE**: The goal requires >= 90% accuracy, but achieved accuracy is 75% ± 3%.
+This does NOT meet the acceptance criteria.
+
+**Trust Score**: 85 (VERIFIED) — Evidence quality is excellent
+**Goal Gate**: FAILED — 75% < 90% target
+
+**Recommendation**: Status should be PARTIAL, not SUCCESS.
+Reason: High-quality work that did not achieve the stated objective.
+```
+
+### Goal vs Trust: Key Distinction
+
+| Aspect | Trust Gate | Goal Gate |
+|--------|------------|-----------|
+| **What it checks** | Evidence quality and rigor | Goal achievement |
+| **Score/Metric** | Trust Score (0-100) | Binary: Met/Not Met |
+| **Can fail independently** | Yes | Yes |
+| **Examples of failure** | Missing CI, no baseline | 75% accuracy when goal was 90% |
+
+**Critical Rule**: A researcher can do excellent, rigorous work (Trust = 90) and still fail to achieve the goal. This is PARTIAL, not SUCCESS. Both gates must pass for SUCCESS.
+
 ## Independent Verification Patterns
 
 When challenging claims, perform these verification checks:

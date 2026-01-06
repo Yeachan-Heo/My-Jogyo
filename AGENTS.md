@@ -573,6 +573,369 @@ print(f"[FINDING] Random Forest achieves {scores.mean():.1%} accuracy, "
       f"outperforming baseline by {improvement:.1%} (95% CI [{ci_low:.3f}, {ci_high:.3f}])")
 ```
 
+## Goal Contract System
+
+A **Goal Contract** defines measurable success criteria for research before execution begins. This enables Gyoshu to objectively determine whether a research goal has been achieved, rather than relying solely on subjective verification.
+
+### What is a Goal Contract?
+
+A Goal Contract is a formal specification that:
+1. **States the goal** in clear, measurable terms
+2. **Defines acceptance criteria** that must be met for success
+3. **Limits retry attempts** to prevent infinite loops
+4. **Enables automatic verification** at research completion
+
+### Goal Contract in Notebook Frontmatter
+
+Goal contracts are stored in the notebook's YAML frontmatter under the `gyoshu.goal_contract` key:
+
+```yaml
+---
+title: "Customer Churn Classification"
+gyoshu:
+  schema_version: 1
+  reportTitle: churn-classification
+  status: active
+  goal_contract:
+    version: 1
+    goal_text: "Build a classification model with 90% accuracy"
+    goal_type: "ml_classification"
+    max_goal_attempts: 3
+    acceptance_criteria:
+      - id: AC1
+        kind: metric_threshold
+        metric: cv_accuracy_mean
+        op: ">="
+        target: 0.90
+      - id: AC2
+        kind: marker_required
+        marker: "METRIC:baseline_accuracy"
+      - id: AC3
+        kind: artifact_exists
+        artifactPattern: "*.pkl"
+      - id: AC4
+        kind: finding_count
+        minCount: 3
+---
+```
+
+### Goal Contract Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `version` | number | Yes | Schema version (currently `1`) |
+| `goal_text` | string | Yes | Human-readable goal statement |
+| `goal_type` | string | No | Goal category: `ml_classification`, `ml_regression`, `eda`, `statistical`, `custom` |
+| `max_goal_attempts` | number | No | Maximum pivot attempts before BLOCKED (default: 3) |
+| `acceptance_criteria` | array | Yes | List of criteria that must ALL pass |
+
+### Acceptance Criteria Types
+
+#### 1. `metric_threshold` — Compare Metric to Target
+
+Checks if a `[METRIC:name]` marker value meets a threshold.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Unique identifier (e.g., `AC1`) |
+| `kind` | string | Must be `metric_threshold` |
+| `metric` | string | Metric name (e.g., `cv_accuracy_mean`, `f1_score`) |
+| `op` | string | Comparison operator: `>=`, `>`, `<=`, `<`, `==` |
+| `target` | number | Target value to compare against |
+
+**Example:**
+```yaml
+- id: AC1
+  kind: metric_threshold
+  metric: cv_accuracy_mean
+  op: ">="
+  target: 0.90
+```
+
+**How it works:** Scans notebook output for `[METRIC:cv_accuracy_mean] 0.92` and checks if `0.92 >= 0.90`.
+
+#### 2. `marker_required` — Check Marker Exists
+
+Verifies that a specific marker type appears in the notebook output.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Unique identifier |
+| `kind` | string | Must be `marker_required` |
+| `marker` | string | Marker type to find (e.g., `METRIC:baseline_accuracy`, `STAT:ci`) |
+
+**Example:**
+```yaml
+- id: AC2
+  kind: marker_required
+  marker: "METRIC:baseline_accuracy"
+```
+
+**How it works:** Searches for `[METRIC:baseline_accuracy]` in any cell output. Passes if found at least once.
+
+#### 3. `artifact_exists` — Check File Exists
+
+Verifies that a specific artifact file was created in the reports directory.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Unique identifier |
+| `kind` | string | Must be `artifact_exists` |
+| `artifactPattern` | string | Glob pattern to match (e.g., `*.pkl`, `figures/*.png`, `model.joblib`) |
+
+**Example:**
+```yaml
+- id: AC3
+  kind: artifact_exists
+  artifactPattern: "models/*.pkl"
+```
+
+**How it works:** Checks `reports/{reportTitle}/models/` for any `.pkl` file. Passes if at least one match exists.
+
+#### 4. `finding_count` — Count Verified Findings
+
+Verifies that a minimum number of verified `[FINDING]` markers exist.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Unique identifier |
+| `kind` | string | Must be `finding_count` |
+| `minCount` | number | Minimum number of verified findings required |
+
+**Example:**
+```yaml
+- id: AC4
+  kind: finding_count
+  minCount: 3
+```
+
+**How it works:** Counts `[FINDING]` markers that have supporting `[STAT:ci]` and `[STAT:effect_size]` within 10 lines before. Only verified findings count.
+
+### Goal Contract Examples
+
+#### ML Classification Goal
+
+```yaml
+goal_contract:
+  version: 1
+  goal_text: "Classify wine quality with F1 >= 0.85"
+  goal_type: ml_classification
+  max_goal_attempts: 3
+  acceptance_criteria:
+    - id: AC1
+      kind: metric_threshold
+      metric: cv_f1_mean
+      op: ">="
+      target: 0.85
+    - id: AC2
+      kind: marker_required
+      marker: "METRIC:baseline_accuracy"
+    - id: AC3
+      kind: artifact_exists
+      artifactPattern: "models/*.pkl"
+```
+
+#### Exploratory Data Analysis Goal
+
+```yaml
+goal_contract:
+  version: 1
+  goal_text: "Complete comprehensive EDA with 5+ insights"
+  goal_type: eda
+  max_goal_attempts: 2
+  acceptance_criteria:
+    - id: AC1
+      kind: finding_count
+      minCount: 5
+    - id: AC2
+      kind: artifact_exists
+      artifactPattern: "figures/*.png"
+    - id: AC3
+      kind: marker_required
+      marker: "CONCLUSION"
+```
+
+#### Statistical Analysis Goal
+
+```yaml
+goal_contract:
+  version: 1
+  goal_text: "Test hypothesis with p < 0.05"
+  goal_type: statistical
+  max_goal_attempts: 2
+  acceptance_criteria:
+    - id: AC1
+      kind: marker_required
+      marker: "STAT:p_value"
+    - id: AC2
+      kind: marker_required
+      marker: "STAT:ci"
+    - id: AC3
+      kind: marker_required
+      marker: "STAT:effect_size"
+    - id: AC4
+      kind: finding_count
+      minCount: 1
+```
+
+## Two-Gate Completion
+
+Gyoshu uses a **Two-Gate verification system** to ensure both research quality (Trust Gate) and goal achievement (Goal Gate) before accepting results.
+
+### The Two Gates
+
+| Gate | What It Checks | Who Evaluates | Pass Condition |
+|------|----------------|---------------|----------------|
+| **Trust Gate** | Research quality, statistical rigor, evidence validity | Baksa (adversarial verifier) | Trust score ≥ 80 |
+| **Goal Gate** | Whether acceptance criteria are met | Automated (from goal contract) | All criteria pass |
+
+### Why Two Gates?
+
+**Trust Gate alone is insufficient:**
+- Research can be methodologically sound but fail to achieve the stated goal
+- Example: Perfect statistical analysis showing 70% accuracy when goal was 90%
+
+**Goal Gate alone is insufficient:**
+- Goal can be "achieved" through flawed methodology
+- Example: Claiming 95% accuracy on training set without cross-validation
+
+**Together, they ensure:**
+- Results are trustworthy AND meaningful
+- Claims are verified AND goals are met
+- Research is rigorous AND successful
+
+### Two-Gate Decision Matrix
+
+| Trust Gate | Goal Gate | Final Status | Action |
+|------------|-----------|--------------|--------|
+| ✅ PASS | ✅ MET | **SUCCESS** | Accept result, generate report |
+| ✅ PASS | ❌ NOT_MET | **PARTIAL** | Pivot: try different approach |
+| ✅ PASS | 🚫 BLOCKED | **BLOCKED** | Goal impossible, escalate to user |
+| ❌ FAIL | ✅ MET | **PARTIAL** | Rework: improve evidence quality |
+| ❌ FAIL | ❌ NOT_MET | **PARTIAL** | Rework: fix methodology |
+| ❌ FAIL | 🚫 BLOCKED | **BLOCKED** | Cannot proceed, escalate to user |
+
+### Gate Status Definitions
+
+**Trust Gate:**
+- `PASS`: Trust score ≥ 80 (verified)
+- `FAIL`: Trust score < 80 (needs rework)
+
+**Goal Gate:**
+- `MET`: All acceptance criteria pass
+- `NOT_MET`: Some criteria failed, but retry is possible
+- `BLOCKED`: Goal is impossible (e.g., data doesn't support the hypothesis)
+
+### The Pivot and Rework Cycle
+
+When gates fail, Gyoshu doesn't immediately give up:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      Research Execution                      │
+└─────────────────────────┬───────────────────────────────────┘
+                          ▼
+┌─────────────────────────────────────────────────────────────┐
+│                     Trust Gate Check                         │
+│               (Baksa adversarial verification)               │
+└───────────┬─────────────────────────────────┬───────────────┘
+            │ PASS                            │ FAIL
+            ▼                                 ▼
+┌───────────────────────┐         ┌───────────────────────────┐
+│   Goal Gate Check     │         │   Rework Request          │
+│ (Automated criteria)  │         │   (Fix evidence quality)  │
+└───────┬───────────────┘         └─────────────┬─────────────┘
+        │                                       │
+   MET  │  NOT_MET                              │
+        │     │                                 │
+        ▼     ▼                                 │
+   SUCCESS  PARTIAL                             │
+              │                                 │
+              ├───────── Attempt < Max? ────────┤
+              │              Yes                │
+              ▼                                 │
+        ┌─────────────┐                         │
+        │   PIVOT     │◄────────────────────────┘
+        │ Try new     │
+        │ approach    │
+        └─────────────┘
+              │
+              │ Attempt >= Max
+              ▼
+         BLOCKED
+```
+
+### Pivot vs Rework
+
+| Action | Trigger | What Happens |
+|--------|---------|--------------|
+| **Rework** | Trust Gate FAIL | Jogyo improves evidence (adds CI, effect size, etc.) without changing approach |
+| **Pivot** | Goal Gate NOT_MET | Jogyo tries a different approach (new model, different features, etc.) |
+
+### Max Attempts and BLOCKED Status
+
+The `max_goal_attempts` field in the goal contract limits how many times Gyoshu will try to achieve the goal:
+
+```yaml
+goal_contract:
+  max_goal_attempts: 3  # Try up to 3 different approaches
+```
+
+**Attempt counting:**
+- Each Pivot increments the attempt counter
+- Reworks do NOT increment (same approach, better evidence)
+- When attempts ≥ max_goal_attempts, status becomes BLOCKED
+
+**BLOCKED status means:**
+- The goal cannot be achieved with available data/methods
+- User intervention is required
+- Gyoshu will NOT keep trying indefinitely
+
+### Example: Two-Gate Flow
+
+**Goal:** "Build classifier with 90% accuracy"
+
+**Attempt 1:**
+1. Jogyo trains Random Forest → 85% accuracy
+2. Trust Gate: PASS (proper CV, baseline comparison)
+3. Goal Gate: NOT_MET (85% < 90%)
+4. Decision: PARTIAL → Pivot
+
+**Attempt 2:**
+1. Jogyo trains XGBoost → 92% accuracy
+2. Trust Gate: FAIL (no confidence interval reported)
+3. Decision: PARTIAL → Rework
+
+**Attempt 2 (Rework):**
+1. Jogyo adds CI: 95% CI [0.90, 0.94]
+2. Trust Gate: PASS
+3. Goal Gate: MET (92% ≥ 90%)
+4. Decision: **SUCCESS** ✅
+
+### Viewing Gate Results
+
+Gate results are included in the completion response:
+
+```json
+{
+  "status": "PARTIAL",
+  "trustGate": {
+    "passed": true,
+    "score": 85
+  },
+  "goalGate": {
+    "status": "NOT_MET",
+    "criteriaResults": [
+      { "id": "AC1", "passed": false, "actual": 0.85, "target": 0.90 },
+      { "id": "AC2", "passed": true }
+    ]
+  },
+  "action": "PIVOT",
+  "attemptNumber": 1,
+  "maxAttempts": 3
+}
+```
+
 ## Structured Output Markers
 
 When working with Gyoshu REPL output, use these markers:

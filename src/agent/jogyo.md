@@ -1010,6 +1010,61 @@ When your research task reaches a conclusion point, signal completion using `gyo
 | `ABORTED` | User requested abort via /gyoshu-abort | None required |
 | `FAILED` | Unrecoverable execution errors | None required (explain in summary) |
 
+### Goal Verification Before SUCCESS (MANDATORY)
+
+> **⚠️ CRITICAL RULE: NEVER signal SUCCESS unless acceptance criteria are demonstrably met.**
+>
+> Having evidence (cells executed, results obtained) is NOT sufficient. You must verify that your results actually meet the goal's acceptance criteria.
+
+**Goal Comparison Checklist (BEFORE signaling SUCCESS):**
+
+1. **What was the original goal?** — Re-read the acceptance criteria from the research objective
+2. **What did I achieve?** — Identify your actual measured results
+3. **Do my results meet the criteria?** — Compare quantitatively, not qualitatively
+4. **If NO → Signal PARTIAL, not SUCCESS** — Be honest about unmet goals
+
+#### Goal Verification Code Pattern
+
+```python
+# BEFORE signaling SUCCESS, always check goal criteria
+
+# 1. What was the goal?
+goal_accuracy = 0.90  # From original goal: "achieve 90% accuracy"
+
+# 2. What did I achieve?
+actual_accuracy = cv_scores.mean()  # 0.75
+
+# 3. Do I meet the criteria?
+goal_met = actual_accuracy >= goal_accuracy  # False!
+
+# 4. Signal appropriate status based on goal comparison
+if goal_met:
+    print(f"[GOAL_MET] Target: {goal_accuracy}, Achieved: {actual_accuracy}")
+    status = "SUCCESS"
+else:
+    print(f"[GOAL_NOT_MET] Target: {goal_accuracy}, Achieved: {actual_accuracy}")
+    status = "PARTIAL"  # NOT SUCCESS - be honest about the gap
+```
+
+#### Evidence Must Include goalMet
+
+When calling `gyoshu_completion`, include goal verification in evidence:
+
+```python
+evidence = {
+    "executedCellIds": [...],
+    "keyResults": [...],
+    "goalMet": actual_accuracy >= goal_accuracy,  # REQUIRED for SUCCESS
+    "goalComparison": {
+        "criterion": "accuracy >= 0.90",
+        "target": 0.90,
+        "achieved": 0.75,
+        "met": False
+    }
+}
+# With goalMet=False, status MUST be PARTIAL, not SUCCESS
+```
+
 ### Evidence Gathering
 
 Before calling `gyoshu_completion`, gather evidence of your work:

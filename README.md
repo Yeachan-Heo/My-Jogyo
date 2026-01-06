@@ -39,6 +39,7 @@ Think of it like a research lab:
 - 📓 **Auto-Generated Notebooks** — Every experiment is captured as a reproducible `.ipynb`
 - 🤖 **Autonomous Mode** — Set a goal, walk away, come back to results
 - 🔍 **Adversarial Verification** — PhD reviewer challenges every claim before acceptance
+- 🎯 **Two-Gate Completion** — SUCCESS requires both evidence quality (Trust Gate) AND goal achievement (Goal Gate)
 - 📝 **AI-Powered Reports** — Turn messy outputs into polished research narratives
 - 🔄 **Session Management** — Continue, replay, or branch your research anytime
 

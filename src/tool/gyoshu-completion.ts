@@ -11,6 +11,8 @@ import { getLegacyManifestPath, getNotebookPath } from "../lib/paths";
 import { gatherReportContext, ReportContext, generateReport } from "../lib/report-markdown";
 import { exportToPdf, PdfExportResult } from "../lib/pdf-export";
 import { runQualityGates, QualityGateResult } from "../lib/quality-gates";
+import { evaluateGoalGate, recommendPivot, GoalGateResult } from "../lib/goal-gates";
+import { extractFrontmatter, GyoshuFrontmatter } from "../lib/notebook-frontmatter";
 import type { Notebook } from "../lib/cell-identity";
 
 interface KeyResult {
@@ -326,6 +328,8 @@ export default tool({
     const valid = !hasErrors(warnings);
 
     let qualityGateResult: QualityGateResult | undefined;
+    let goalGateResult: GoalGateResult | undefined;
+    let frontmatter: GyoshuFrontmatter | null = null;
     let adjustedStatus = status;
 
     // Fix 1: SUCCESS status requires reportTitle for quality gate validation
@@ -358,11 +362,37 @@ export default tool({
           }
         }
 
+        // Run Quality Gates (Trust Gate)
         qualityGateResult = runQualityGates(allOutput.join("\n"));
 
         if (!qualityGateResult.passed) {
           adjustedStatus = "PARTIAL";
         }
+
+        // Extract frontmatter for Goal Gate evaluation
+        frontmatter = extractFrontmatter(notebook);
+
+        // Evaluate Goal Gate (in addition to Trust Gate / quality gates)
+        // Only evaluate if frontmatter has a goal_contract (backward compatibility)
+        if (adjustedStatus === "SUCCESS" && frontmatter?.goal_contract) {
+          goalGateResult = evaluateGoalGate(
+            frontmatter.goal_contract,
+            allOutput.join("\n"),
+            typedEvidence?.artifactPaths || []
+          );
+
+          // Apply Two-Gate Decision Matrix
+          // If Trust Gate passed (quality gates) but Goal Gate failed
+          if (!goalGateResult.passed) {
+            adjustedStatus = "PARTIAL";
+            warnings.push({
+              code: "GOAL_NOT_MET",
+              message: `Goal criteria not met: ${goalGateResult.metCount}/${goalGateResult.totalCount} criteria passed`,
+              severity: "warning",
+            });
+          }
+        }
+        // If no goal_contract, skip Goal Gate (backward compatibility)
       } catch (e) {
         // Fix 2: Don't swallow quality gate errors - downgrade to PARTIAL
         adjustedStatus = "PARTIAL";
@@ -488,6 +518,29 @@ export default tool({
 
       if (!qualityGateResult.passed) {
         response.message = `Completion signal recorded: ${adjustedStatus} (downgraded from SUCCESS due to ${qualityGateResult.violations.length} quality gate violation(s))`;
+      }
+    }
+
+    if (goalGateResult) {
+      response.goalGates = {
+        passed: goalGateResult.passed,
+        overallStatus: goalGateResult.overallStatus,
+        metCount: goalGateResult.metCount,
+        totalCount: goalGateResult.totalCount,
+        criteriaResults: goalGateResult.criteriaResults,
+      };
+
+      if (!goalGateResult.passed && goalGateResult.overallStatus === "NOT_MET") {
+        const pivot = recommendPivot(
+          goalGateResult,
+          1,
+          frontmatter?.goal_contract?.max_goal_attempts || 3
+        );
+        response.pivotRecommendation = pivot;
+      }
+
+      if (!goalGateResult.passed) {
+        response.message = `Completion signal recorded: ${adjustedStatus} (Goal Gate failed: ${goalGateResult.metCount}/${goalGateResult.totalCount} criteria met)`;
       }
     }
 

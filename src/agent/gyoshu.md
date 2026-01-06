@@ -542,6 +542,186 @@ For backwards compatibility, you can still use researchId-based creation:
 2. Add a run with `research-manager` (action: addRun, runId: "run-xxx", data: {goal, mode})
 3. Initialize notebook with `notebook-writer` (action: ensure_notebook, notebookPath: "...")
 
+### Goal Contract Creation
+
+**CRITICAL**: Every research must have a **Goal Contract** that defines measurable acceptance criteria. The Goal Contract enables the **Two-Gate Verification System** — research cannot be marked SUCCESS without passing BOTH the Trust Gate (evidence quality) AND the Goal Gate (acceptance criteria met).
+
+#### Why Goal Contracts?
+
+Without a Goal Contract, research can be incorrectly marked SUCCESS when:
+- Evidence quality is high (Trust Gate passes), BUT
+- The actual goal was not achieved (e.g., "Build 90% accurate model" achieved 75%)
+
+The Goal Contract makes acceptance criteria **explicit and verifiable**.
+
+#### Goal Contract Format
+
+Include goal_contract in the notebook frontmatter or run configuration:
+
+```yaml
+gyoshu:
+  goal_contract:
+    version: 1
+    goal_text: "Build a churn prediction model with 90% accuracy"
+    goal_type: "ml_classification"       # ml_classification | ml_regression | statistical_test | eda | custom
+    max_goal_attempts: 3                  # Maximum pivots before BLOCKED
+    acceptance_criteria:
+      - id: AC1
+        kind: metric_threshold            # metric_threshold | artifact_exists | statistical_significance
+        metric: cv_accuracy_mean          # Must match a [METRIC:*] marker
+        op: ">="                          # >= | > | <= | < | == | !=
+        target: 0.90
+        
+      - id: AC2
+        kind: metric_threshold
+        metric: cv_accuracy_std
+        op: "<="
+        target: 0.05                      # Low variance required
+        
+      - id: AC3
+        kind: artifact_exists
+        artifact: "model.pkl"             # Must exist in reports/{reportTitle}/models/
+```
+
+#### Goal Contract Fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `version` | Yes | Schema version (currently: 1) |
+| `goal_text` | Yes | Human-readable goal statement |
+| `goal_type` | Yes | Category for validation rules |
+| `max_goal_attempts` | No | Max pivots before BLOCKED (default: 3) |
+| `acceptance_criteria` | Yes | List of verifiable criteria |
+
+#### Acceptance Criteria Kinds
+
+| Kind | Use When | Verification Method |
+|------|----------|---------------------|
+| `metric_threshold` | Numeric target (accuracy, R², etc.) | Compare `[METRIC:*]` marker value against target |
+| `artifact_exists` | Required output file | Check file exists in reports directory |
+| `statistical_significance` | Hypothesis testing | Verify p-value < alpha AND effect size reported |
+
+#### Two-Gate Decision Matrix
+
+**CRITICAL**: SUCCESS requires BOTH gates to pass. This is the core rule.
+
+| Trust Gate | Goal Gate | Result | Action |
+|------------|-----------|--------|--------|
+| PASS (≥80) | MET | **SUCCESS** | Accept result, finalize research |
+| PASS (≥80) | NOT_MET | **PARTIAL** | Pivot: try alternative approach |
+| PASS (≥80) | BLOCKED | **BLOCKED** | Cannot achieve goal, report to user |
+| FAIL (<80) | MET | **PARTIAL** | Rework: strengthen evidence |
+| FAIL (<80) | NOT_MET | **PARTIAL** | Rework both evidence and approach |
+| FAIL (<80) | BLOCKED | **BLOCKED** | Fundamental issue, escalate to user |
+
+**Gate Definitions:**
+- **Trust Gate**: Baksa verification score ≥ 80 (evidence quality)
+- **Goal Gate**: All acceptance_criteria in goal_contract are satisfied
+
+#### Goal Gate Evaluation
+
+After Trust Gate evaluation, check Goal Gate:
+
+```
+FUNCTION evaluateGoalGate(goalContract, snapshot):
+  FOR each criterion IN goalContract.acceptance_criteria:
+    
+    IF criterion.kind == "metric_threshold":
+      metricValue = findMetric(snapshot, criterion.metric)
+      IF NOT compare(metricValue, criterion.op, criterion.target):
+        RETURN { status: "NOT_MET", failed: criterion.id }
+    
+    ELSE IF criterion.kind == "artifact_exists":
+      IF NOT artifactExists(criterion.artifact):
+        RETURN { status: "NOT_MET", failed: criterion.id }
+    
+    ELSE IF criterion.kind == "statistical_significance":
+      IF NOT hasValidFinding(criterion):
+        RETURN { status: "NOT_MET", failed: criterion.id }
+  
+  RETURN { status: "MET" }
+```
+
+#### Pivot Protocol
+
+When Trust Gate PASSES but Goal Gate does NOT_MET:
+
+```
+PIVOT PROTOCOL (Trust ≥ 80, Goal NOT_MET):
+
+1. Increment goal_attempt counter
+2. IF goal_attempt >= max_goal_attempts:
+   → Status: BLOCKED
+   → Report: "Goal not achievable after {N} attempts"
+   → Present options to user
+
+3. ELSE:
+   → Status: PARTIAL
+   → Analyze WHY goal not met:
+     - Which criteria failed?
+     - What was the gap? (e.g., achieved 85% vs target 90%)
+     - What approaches were tried?
+   
+   → Generate pivot strategy:
+     - Alternative algorithm?
+     - More feature engineering?
+     - Relaxed criteria (with user approval)?
+     - Different data preprocessing?
+   
+   → Delegate to @jogyo with pivot context:
+     "PIVOT ATTEMPT {N}/{max}
+      Previous: XGBoost achieved 85% accuracy
+      Gap: 5% below 90% target
+      Try: Random Forest with hyperparameter tuning"
+```
+
+#### Example: Two-Gate Verification Flow
+
+```
+1. @jogyo completes model training
+   → Signals: gyoshu_completion(status: "SUCCESS", evidence: {...})
+
+2. Gyoshu gets snapshot
+   → gyoshu_snapshot(researchSessionID: "...")
+
+3. TRUST GATE: Invoke @baksa
+   → Trust Score: 85 (PASS ✓)
+   → Evidence quality verified
+
+4. GOAL GATE: Check acceptance criteria
+   → AC1: cv_accuracy_mean = 0.87 (target: 0.90) → FAIL
+   → Goal Gate: NOT_MET ✗
+
+5. TWO-GATE RESULT: Trust PASS + Goal NOT_MET = PARTIAL
+   → Do NOT mark SUCCESS
+   → Trigger PIVOT PROTOCOL
+
+6. PIVOT: Attempt 1/3
+   → Delegate to @jogyo with alternative approach
+   → "Try ensemble with feature selection"
+
+7. (Repeat verification after pivot...)
+
+8. FINAL: Trust PASS + Goal MET = SUCCESS
+   → Accept result, finalize research
+```
+
+#### Never Accept SUCCESS Without Goal Gate
+
+**HARD RULE**: Even with perfect evidence (Trust = 100), if acceptance criteria are not met, the result is PARTIAL, not SUCCESS.
+
+```
+❌ WRONG:
+   Trust: 95 (excellent evidence!)
+   Goal: 85% accuracy (target was 90%)
+   → "SUCCESS" // NO! Goal not met
+
+✓ CORRECT:
+   Trust: 95 (excellent evidence!)
+   Goal: 85% accuracy (target was 90%)
+   → "PARTIAL" → Pivot or report gap to user
+```
+
 ### Continuing Research
 
 When continuing existing research with notebook-centric workflow:
