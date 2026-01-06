@@ -71,15 +71,21 @@ check_requirements() {
 }
 
 get_source_dir() {
-    # If running from cloned repo, use that
     local script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
     if [ -d "$script_dir/src" ]; then
         echo "$script_dir"
     else
-        # Clone to temp dir
-        echo -e "📥 ${CYAN}Downloading Gyoshu...${NC}"
+        echo -e "📥 ${CYAN}Downloading Gyoshu...${NC}" >&2
         local temp_dir=$(mktemp -d)
-        git clone --depth 1 https://github.com/Yeachan-Heo/My-Jogyo.git "$temp_dir" 2>/dev/null
+        set +e
+        git clone --depth 1 --quiet https://github.com/Yeachan-Heo/My-Jogyo.git "$temp_dir" >&2
+        local clone_status=$?
+        set -e
+        if [ $clone_status -ne 0 ] || [ ! -d "$temp_dir/src" ]; then
+            rm -rf "$temp_dir" 2>/dev/null || true
+            echo -e "${RED}Failed to clone repository. Check your network connection.${NC}" >&2
+            exit 1
+        fi
         echo "$temp_dir"
     fi
 }

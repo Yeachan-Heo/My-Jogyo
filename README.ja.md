@@ -44,30 +44,34 @@
 
 ---
 
-## 🚀 ワンクリックインストール
-
-### オプション1：curl（推奨）
+## 🚀 インストール
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Yeachan-Heo/My-Jogyo/main/install.sh | bash
 ```
 
-### オプション2：クローン＆インストール
+<details>
+<summary>📦 その他のインストール方法</summary>
 
+**クローン＆インストール**（貢献や変更を行う場合）
 ```bash
 git clone https://github.com/Yeachan-Heo/My-Jogyo.git
 cd My-Jogyo && ./install.sh
 ```
 
-### オプション3：手動インストール
-
+**npm/bunx**（パッケージマネージャー）
 ```bash
-# リポジトリをクローン
-git clone https://github.com/Yeachan-Heo/My-Jogyo.git
+npm install -g gyoshu && gyoshu install
+# または
+bunx gyoshu install
+```
 
-# グローバル設定にコピー
-mkdir -p ~/.config/opencode/
-cp -r My-Jogyo/src/* ~/.config/opencode/
+</details>
+
+**インストールの確認：**
+```bash
+./install.sh --check   # リポジトリをクローンした場合
+# またはopencodeを実行して/gyoshuを試す
 ```
 
 ---

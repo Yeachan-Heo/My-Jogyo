@@ -44,30 +44,34 @@
 
 ---
 
-## 🚀 一键安装
-
-### 选项 1：curl（推荐）
+## 🚀 安装
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Yeachan-Heo/My-Jogyo/main/install.sh | bash
 ```
 
-### 选项 2：克隆并安装
+<details>
+<summary>📦 其他安装方式</summary>
 
+**克隆并安装**（如果您想贡献或修改）
 ```bash
 git clone https://github.com/Yeachan-Heo/My-Jogyo.git
 cd My-Jogyo && ./install.sh
 ```
 
-### 选项 3：手动安装
-
+**npm/bunx**（包管理器）
 ```bash
-# 克隆仓库
-git clone https://github.com/Yeachan-Heo/My-Jogyo.git
+npm install -g gyoshu && gyoshu install
+# 或
+bunx gyoshu install
+```
 
-# 复制到全局配置目录
-mkdir -p ~/.config/opencode/
-cp -r My-Jogyo/src/* ~/.config/opencode/
+</details>
+
+**验证安装：**
+```bash
+./install.sh --check   # 如果您克隆了仓库
+# 或直接运行 opencode 并尝试 /gyoshu
 ```
 
 ---

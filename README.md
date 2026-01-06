@@ -44,32 +44,34 @@ Think of it like a research lab:
 
 ---
 
-## 🚀 One-Click Installation
-
-### Option 1: bunx (Recommended)
+## 🚀 Installation
 
 ```bash
-bunx gyoshu install
+curl -fsSL https://raw.githubusercontent.com/Yeachan-Heo/My-Jogyo/main/install.sh | bash
 ```
 
-### Option 2: curl
+<details>
+<summary>📦 Alternative installation methods</summary>
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/Yeachan-Heo/My-Jogyo/refs/heads/main/install.sh | bash
-```
-
-### Option 3: Clone & Install
-
+**Clone & Install** (if you want to contribute or modify)
 ```bash
 git clone https://github.com/Yeachan-Heo/My-Jogyo.git
 cd My-Jogyo && ./install.sh
 ```
 
-### Option 4: npm global install
-
+**npm/bunx** (package manager)
 ```bash
-npm install -g gyoshu
-gyoshu install
+npm install -g gyoshu && gyoshu install
+# or
+bunx gyoshu install
+```
+
+</details>
+
+**Verify installation:**
+```bash
+./install.sh --check   # If you cloned the repo
+# or just run opencode and try /gyoshu
 ```
 
 ---
@@ -349,28 +351,18 @@ python3 -m venv .venv
 
 ## 🔄 Updating
 
-### Option 1: Re-run the installer
-
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Yeachan-Heo/My-Jogyo/main/install.sh | bash
 ```
 
-### Option 2: Pull and re-install (if you cloned)
-
+Or if you cloned the repo:
 ```bash
-cd My-Jogyo
-git pull
-./install.sh
+cd My-Jogyo && git pull && ./install.sh
 ```
 
-### Verify your update
+Verify: `opencode` then `/gyoshu doctor`
 
-```bash
-opencode
-/gyoshu doctor
-```
-
-See [CHANGELOG.md](CHANGELOG.md) for what's new in each release.
+See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 ---
 
