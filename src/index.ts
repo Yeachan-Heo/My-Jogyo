@@ -287,10 +287,31 @@ function recoverInterruptedSwaps(configRealPath: string, errors: string[]): void
   const skillDir = path.join(OPENCODE_CONFIG, "skill");
   if (!fs.existsSync(skillDir)) return;
 
+  if (isSymlink(skillDir)) {
+    errors.push("Skill directory is a symlink - skipping recovery");
+    return;
+  }
+
+  try {
+    const skillRealPath = fs.realpathSync(skillDir);
+    if (!skillRealPath.startsWith(configRealPath + path.sep) && skillRealPath !== configRealPath) {
+      errors.push("Skill directory escapes config - skipping recovery");
+      return;
+    }
+  } catch (err) {
+    errors.push(`Cannot verify skill directory confinement: ${err instanceof Error ? err.message : String(err)}`);
+    return;
+  }
+
   try {
     const entries = fs.readdirSync(skillDir);
     for (const entry of entries) {
       const fullPath = path.join(skillDir, entry);
+
+      if (isSymlink(fullPath)) {
+        errors.push(`Skipping symlink during recovery: ${entry}`);
+        continue;
+      }
 
       if (entry.includes(".tmp.")) {
         try {
@@ -397,6 +418,15 @@ function isGyoshuOwned(filePath: string, state: InstallState | null): boolean {
 }
 
 function atomicCopyFile(srcPath: string, destPath: string, configRealPath: string): void {
+  const parentDir = path.dirname(destPath);
+  const symlinkCheck = validateNoSymlinksInPath(parentDir);
+  if (!symlinkCheck.valid) {
+    throw new Error(symlinkCheck.error || "Symlink in path before write");
+  }
+  if (!reVerifyConfinement(destPath, configRealPath)) {
+    throw new Error("Confinement check failed before write");
+  }
+
   const tempPath = `${destPath}.tmp.${crypto.randomUUID()}`;
   const fd = fs.openSync(tempPath, "wx", 0o644);
   try {
@@ -425,6 +455,15 @@ function atomicCopyFile(srcPath: string, destPath: string, configRealPath: strin
 }
 
 function atomicCreateFile(srcPath: string, destPath: string, configRealPath: string): void {
+  const parentDir = path.dirname(destPath);
+  const symlinkCheck = validateNoSymlinksInPath(parentDir);
+  if (!symlinkCheck.valid) {
+    throw new Error(symlinkCheck.error || "Symlink in path before write");
+  }
+  if (!reVerifyConfinement(destPath, configRealPath)) {
+    throw new Error("Confinement check failed before write");
+  }
+
   const tempPath = `${destPath}.tmp.${crypto.randomUUID()}`;
   const fd = fs.openSync(tempPath, "wx", 0o644);
   try {
@@ -534,6 +573,15 @@ function installSkill(
 
   if (dirExists) {
     if (isGyoshuOwned(relativePath, state)) {
+      const parentDir = path.dirname(destDir);
+      const symlinkCheck = validateNoSymlinksInPath(parentDir);
+      if (!symlinkCheck.valid) {
+        return { installed: false, skipped: false, updated: false, error: symlinkCheck.error || "Symlink in path before write" };
+      }
+      if (!reVerifyConfinement(destDir, configRealPath)) {
+        return { installed: false, skipped: false, updated: false, error: "Confinement check failed before write" };
+      }
+
       const tempDir = `${destDir}.tmp.${crypto.randomUUID()}`;
       const backupDir = `${destDir}.backup.${crypto.randomUUID()}`;
 
@@ -579,6 +627,15 @@ function installSkill(
       }
     }
     return { installed: false, skipped: true, updated: false };
+  }
+
+  const parentDir = path.dirname(destDir);
+  const symlinkCheck = validateNoSymlinksInPath(parentDir);
+  if (!symlinkCheck.valid) {
+    return { installed: false, skipped: false, updated: false, error: symlinkCheck.error || "Symlink in path before write" };
+  }
+  if (!reVerifyConfinement(destDir, configRealPath)) {
+    return { installed: false, skipped: false, updated: false, error: "Confinement check failed before write" };
   }
 
   try {
