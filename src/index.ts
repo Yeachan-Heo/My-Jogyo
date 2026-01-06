@@ -91,6 +91,9 @@ function isProcessAlive(pid: number): boolean {
 
 function parseLockFile(): LockInfo | null {
   try {
+    if (isSymlink(INSTALL_LOCK_FILE)) {
+      return null;
+    }
     const content = fs.readFileSync(INSTALL_LOCK_FILE, "utf-8");
     const lines = content.trim().split("\n");
     if (lines.length < 3) return null;
@@ -219,6 +222,11 @@ function acquireLock(configRealPath: string, errors: string[]): { fd: number; lo
     }
 
     try {
+      if (isSymlink(INSTALL_LOCK_FILE)) {
+        errors.push("Lock file is a symlink - refusing to use");
+        return null;
+      }
+
       const lockId = crypto.randomUUID();
       const fd = fs.openSync(INSTALL_LOCK_FILE, "wx", 0o644);
       const content = `${process.pid}\n${Date.now()}\n${lockId}`;
@@ -248,6 +256,10 @@ function acquireLock(configRealPath: string, errors: string[]): { fd: number; lo
 
         if (age > LOCK_STALE_MS && ownerDead) {
           try {
+            if (isSymlink(INSTALL_LOCK_FILE)) {
+              errors.push("Stale lock file is a symlink - refusing to remove");
+              return null;
+            }
             fs.unlinkSync(INSTALL_LOCK_FILE);
             continue;
           } catch {
@@ -270,12 +282,15 @@ function acquireLock(configRealPath: string, errors: string[]): { fd: number; lo
 function releaseLock(lock: { fd: number; lockId: string } | null, errors: string[]): void {
   if (lock === null) return;
   try {
+    fs.closeSync(lock.fd);
+    if (isSymlink(INSTALL_LOCK_FILE)) {
+      errors.push("Lock file became a symlink - not unlinking");
+      return;
+    }
     const currentInfo = parseLockFile();
     if (currentInfo && currentInfo.lockId === lock.lockId) {
-      fs.closeSync(lock.fd);
       fs.unlinkSync(INSTALL_LOCK_FILE);
     } else {
-      fs.closeSync(lock.fd);
       errors.push("Lock file was replaced by another process - not unlinking");
     }
   } catch (err) {
@@ -586,7 +601,7 @@ function installSkill(
       const backupDir = `${destDir}.backup.${crypto.randomUUID()}`;
 
       try {
-        fs.cpSync(srcDir, tempDir, { recursive: true });
+        fs.cpSync(srcDir, tempDir, { recursive: true, dereference: false, force: false, errorOnExist: true });
 
         if (!reVerifyConfinement(destDir, configRealPath)) {
           fs.rmSync(tempDir, { recursive: true, force: true });
@@ -640,7 +655,7 @@ function installSkill(
 
   try {
     const tempDir = `${destDir}.tmp.${crypto.randomUUID()}`;
-    fs.cpSync(srcDir, tempDir, { recursive: true });
+    fs.cpSync(srcDir, tempDir, { recursive: true, dereference: false, force: false, errorOnExist: true });
 
     if (!reVerifyConfinement(destDir, configRealPath)) {
       fs.rmSync(tempDir, { recursive: true, force: true });
