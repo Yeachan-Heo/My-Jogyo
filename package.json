@@ -1,6 +1,6 @@
 {
   "name": "gyoshu",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Scientific research agent extension for OpenCode - turns research goals into reproducible Jupyter notebooks",
   "type": "module",
   "bin": {

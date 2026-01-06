@@ -25,7 +25,7 @@ Gyoshu uses free OpenCode models by default for zero-configuration setup:
 | Agent | Default Model | Role |
 |-------|---------------|------|
 | **Gyoshu** | `opencode/glm-4.7-free` | Research planner |
-| **Baksa** | `opencode/alpha-minimax-m2` | Adversarial verifier |
+| **Baksa** | `opencode/minimax-m2.1-free` | Adversarial verifier |
 | **Jogyo** | `opencode/grok-code` | Research executor |
 | **Jogyo Paper Writer** | `opencode/grok-code` | Report writer |
 | **Jogyo Feedback** | `opencode/grok-code` | Feedback explorer |
