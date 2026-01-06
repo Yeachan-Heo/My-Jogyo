@@ -47,32 +47,38 @@ Think of it like a research lab:
 
 ## 🚀 Installation
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/Yeachan-Heo/My-Jogyo/main/install.sh | bash
+Add Gyoshu to your `opencode.json`:
+
+```json
+{
+  "plugin": ["gyoshu"]
+}
 ```
+
+That's it! OpenCode will auto-install Gyoshu via Bun on next startup.
 
 <details>
-<summary>📦 Alternative installation methods</summary>
+<summary>📦 Development installation</summary>
 
-**Clone & Install** (if you want to contribute or modify)
+**Clone & link locally** (for contributors)
 ```bash
 git clone https://github.com/Yeachan-Heo/My-Jogyo.git
-cd My-Jogyo && ./install.sh
+cd My-Jogyo && bun install
 ```
 
-**npm/bunx** (package manager)
-```bash
-npm install -g gyoshu && gyoshu install
-# or
-bunx gyoshu install
+Then in your `opencode.json`:
+```json
+{
+  "plugin": ["file:///path/to/My-Jogyo"]
+}
 ```
 
 </details>
 
 **Verify installation:**
 ```bash
-./install.sh --check   # If you cloned the repo
-# or just run opencode and try /gyoshu
+opencode
+/gyoshu doctor
 ```
 
 ---
@@ -81,7 +87,7 @@ bunx gyoshu install
 
 > *Using Claude, GPT, Gemini, or another AI assistant with OpenCode? This section is for you.*
 
-**Setup is the same** — install Gyoshu using the methods above, then give your LLM the context it needs:
+**Setup is the same** — add `"gyoshu"` to your plugin array, then give your LLM the context it needs:
 
 1. **Point your LLM to the guide:**
    > "Read `AGENTS.md` in the Gyoshu directory for full context on how to use the research tools."
@@ -352,14 +358,13 @@ python3 -m venv .venv
 
 ## 🔄 Updating
 
+OpenCode automatically updates plugins. To force an update, remove the cached version:
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Yeachan-Heo/My-Jogyo/main/install.sh | bash
+rm -rf ~/.cache/opencode/node_modules/gyoshu
 ```
 
-Or if you cloned the repo:
-```bash
-cd My-Jogyo && git pull && ./install.sh
-```
+Then restart OpenCode.
 
 Verify: `opencode` then `/gyoshu doctor`
 
