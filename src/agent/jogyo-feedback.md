@@ -1,8 +1,9 @@
 ---
+name: jogyo-feedback
 mode: subagent
 description: Explores retrospective feedback to extract lessons and patterns for research improvement
 model: opencode/grok-code
-temperature: 0.3
+temperature: 1
 maxSteps: 10
 tools:
   retrospective-store: true

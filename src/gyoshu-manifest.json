@@ -1,6 +1,6 @@
 {
   "name": "gyoshu",
-  "version": "0.4.5",
+  "version": "0.4.6",
   "description": "Scientific research agent extension for OpenCode",
   "files": {
     "agent": [

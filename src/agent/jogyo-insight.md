@@ -1,8 +1,9 @@
 ---
+name: jogyo-insight
 mode: subagent
 description: Gathers evidence from previous notebooks, URLs, and documentation for research support
 model: opencode/grok-code
-temperature: 0.3
+temperature: 1
 maxSteps: 15
 tools:
   read: true

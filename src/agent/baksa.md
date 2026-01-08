@@ -1,8 +1,9 @@
 ---
+name: baksa
 mode: subagent
 description: Adversarial PhD reviewer that challenges Jogyo's research claims and verifies evidence
 model: opencode/minimax-m2.1-free
-temperature: 0.3
+temperature: 1
 maxSteps: 15
 tools:
   read: true

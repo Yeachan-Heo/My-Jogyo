@@ -1,8 +1,9 @@
 ---
+name: jogyo-paper-writer
 mode: subagent
 description: Generates human-readable, narrative research reports from structured context
 model: opencode/grok-code
-temperature: 0.4
+temperature: 1
 maxSteps: 5
 tools:
   read: true

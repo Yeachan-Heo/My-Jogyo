@@ -1,8 +1,9 @@
 ---
+name: jogyo
 mode: subagent
 description: Scientific research agent with Python REPL and structured output markers
 model: opencode/grok-code
-temperature: 0.2
+temperature: 1
 maxSteps: 50
 tools:
   python-repl: true
