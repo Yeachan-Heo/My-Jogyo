@@ -1,6 +1,6 @@
 {
   "name": "gyoshu",
-  "version": "0.4.9",
+  "version": "0.4.13",
   "description": "Scientific research agent extension for OpenCode",
   "files": {
     "agent": [
@@ -16,13 +16,13 @@
       "gyoshu-auto.md"
     ],
     "tool": [
-      "gyoshu-completion.ts",
-      "gyoshu-snapshot.ts",
       "python-repl.ts",
       "notebook-writer.ts",
-      "notebook-search.ts",
       "research-manager.ts",
       "session-manager.ts",
+      "gyoshu-completion.ts",
+      "gyoshu-snapshot.ts",
+      "notebook-search.ts",
       "migration-tool.ts",
       "retrospective-store.ts",
       "checkpoint-manager.ts"
@@ -33,21 +33,28 @@
       "ml-rigor"
     ],
     "lib": [
-      "quality-gates.ts",
-      "marker-parser.ts",
-      "notebook-frontmatter.ts",
-      "report-markdown.ts",
-      "pdf-export.ts",
       "paths.ts",
       "atomic-write.ts",
       "cell-identity.ts",
-      "checkpoint-schema.ts",
-      "environment-capture.ts",
       "session-lock.ts",
-      "readme-index.ts",
-      "filesystem-check.ts",
+      "notebook-frontmatter.ts",
+      "path-security.ts",
+      "bridge-meta.ts",
+      "lock-paths.ts",
+      "marker-parser.ts",
+      "quality-gates.ts",
+      "goal-gates.ts",
+      "report-gates.ts",
+      "report-markdown.ts",
+      "pdf-export.ts",
+      "checkpoint-schema.ts",
       "artifact-security.ts",
-      "goal-gates.ts"
+      "auto-loop-state.ts",
+      "auto-decision.ts",
+      "parallel-queue.ts",
+      "environment-capture.ts",
+      "readme-index.ts",
+      "filesystem-check.ts"
     ],
     "bridge": [
       "gyoshu_bridge.py"

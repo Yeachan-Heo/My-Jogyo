@@ -1,28 +1,19 @@
 #!/usr/bin/env node
 
-/**
- * Gyoshu CLI - Install/uninstall helper for OpenCode
- * 
- * Usage:
- *   bunx gyoshu install   - Add gyoshu to opencode.json
- *   bunx gyoshu uninstall - Remove gyoshu from opencode.json
- *   bunx gyoshu check     - Verify installation status
- */
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { join, dirname } from 'path';
 
-import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { join } from 'path';
-
-const OPENCODE_CONFIG = 'opencode.json';
+const HOME = process.env.HOME || '';
+const OPENCODE_CONFIG_DIR = join(HOME, '.config', 'opencode');
+const OPENCODE_CONFIG_FILE = join(OPENCODE_CONFIG_DIR, 'opencode.json');
+const LEGACY_HOME_CONFIG = join(HOME, 'opencode.json');
 
 function findOpencodeConfig() {
-  // Check current directory
-  if (existsSync(OPENCODE_CONFIG)) {
-    return OPENCODE_CONFIG;
+  if (existsSync(OPENCODE_CONFIG_FILE)) {
+    return OPENCODE_CONFIG_FILE;
   }
-  // Check home directory
-  const homeConfig = join(process.env.HOME || '', OPENCODE_CONFIG);
-  if (existsSync(homeConfig)) {
-    return homeConfig;
+  if (existsSync(LEGACY_HOME_CONFIG)) {
+    return LEGACY_HOME_CONFIG;
   }
   return null;
 }
@@ -37,6 +28,10 @@ function readConfig(configPath) {
 }
 
 function writeConfig(configPath, config) {
+  const dir = dirname(configPath);
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
   writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
 }
 
@@ -51,24 +46,20 @@ function install() {
       process.exit(1);
     }
   } else {
-    // Create new config in current directory
-    configPath = OPENCODE_CONFIG;
+    configPath = OPENCODE_CONFIG_FILE;
     config = {};
-    console.log(`Creating new ${OPENCODE_CONFIG}...`);
+    console.log(`Creating ${configPath}...`);
   }
   
-  // Ensure plugin array exists
   if (!Array.isArray(config.plugin)) {
     config.plugin = [];
   }
   
-  // Check if already installed
   if (config.plugin.includes('gyoshu')) {
     console.log('Gyoshu is already installed in ' + configPath);
     return;
   }
   
-  // Add gyoshu
   config.plugin.push('gyoshu');
   writeConfig(configPath, config);
   
@@ -98,7 +89,6 @@ function uninstall() {
     return;
   }
   
-  // Remove gyoshu
   config.plugin = config.plugin.filter(p => p !== 'gyoshu');
   writeConfig(configPath, config);
   
@@ -112,6 +102,7 @@ function check() {
   if (!configPath) {
     console.log('Status: NOT INSTALLED');
     console.log('No opencode.json found.');
+    console.log(`Expected: ${OPENCODE_CONFIG_FILE}`);
     console.log('\nTo install: bunx gyoshu install');
     return;
   }
@@ -146,6 +137,8 @@ Usage:
   gyoshu check       Verify installation status
   gyoshu help        Show this help message
 
+Config location: ~/.config/opencode/opencode.json
+
 Examples:
   bunx gyoshu install
   npx gyoshu check
@@ -154,7 +147,6 @@ More info: https://github.com/Yeachan-Heo/My-Jogyo
 `);
 }
 
-// Main
 const command = process.argv[2];
 
 switch (command) {
