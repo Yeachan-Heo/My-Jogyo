@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "gyoshu-mcp": {
+      "type": "stdio",
+      "command": "/home/bellman/Workspace/My-Jogyo/src/mcp/build/index.cjs",
+      "args": [],
+      "env": {}
+    }
+  }
+}

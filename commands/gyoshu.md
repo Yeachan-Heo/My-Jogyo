@@ -1,5 +1,6 @@
 ---
 description: Unified Gyoshu research command - start, continue, search, and manage research
+agent: gyoshu
 ---
 
 # /gyoshu - Unified Research Command

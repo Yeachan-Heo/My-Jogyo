@@ -1,0 +1,33 @@
+{
+  "name": "@gyoshu/mcp-server",
+  "version": "0.4.33",
+  "description": "Gyoshu MCP Server - Scientific research tools for Claude Code",
+  "type": "module",
+  "main": "./build/index.cjs",
+  "bin": {
+    "gyoshu-mcp": "./build/index.cjs"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "build:tsc": "tsc",
+    "start": "node build/index.cjs",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "sanitize-html": "^2.17.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/sanitize-html": "^2.16.0",
+    "esbuild": "^0.27.2",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "build"
+  ]
+}
