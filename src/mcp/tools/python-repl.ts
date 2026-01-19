@@ -511,8 +511,35 @@ async function appendCodeCellToNotebook(
 // =============================================================================
 
 function getBridgePath(): string {
-  // Navigate from src/mcp/tools to src/bridge
-  return path.join(__dirname, "..", "..", "bridge", "gyoshu_bridge.py");
+  // 1. Environment variable override
+  if (process.env.GYOSHU_BRIDGE_PATH) {
+    if (fs.existsSync(process.env.GYOSHU_BRIDGE_PATH)) {
+      return process.env.GYOSHU_BRIDGE_PATH;
+    }
+  }
+
+  // 2. Try multiple fallback paths for different installation scenarios
+  const candidates = [
+    // Original: from src/mcp/tools to src/bridge (development)
+    path.join(__dirname, "..", "..", "bridge", "gyoshu_bridge.py"),
+    // Bundled: from build/ to src/bridge (when running bundled from src/mcp/build/)
+    path.join(__dirname, "..", "bridge", "gyoshu_bridge.py"),
+    // From project root (when cwd is project root)
+    path.join(process.cwd(), "src", "bridge", "gyoshu_bridge.py"),
+    // Alternative: bridge at cwd/bridge
+    path.join(process.cwd(), "bridge", "gyoshu_bridge.py"),
+  ];
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  throw new Error(
+    `Could not find gyoshu_bridge.py. Searched paths:\n${candidates.map(p => `  - ${p}`).join('\n')}\n` +
+    `Set GYOSHU_BRIDGE_PATH environment variable to the correct path.`
+  );
 }
 
 function getBridgeMetaPath(sessionId: string): string {

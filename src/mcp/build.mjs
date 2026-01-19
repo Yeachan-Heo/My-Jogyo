@@ -29,6 +29,8 @@ try {
     external: [],
     // Allow importing from parent lib directory
     absWorkingDir: join(__dirname, '..'),
+    // Include MCP's node_modules for dependency resolution
+    nodePaths: [join(__dirname, 'node_modules')],
     // No banner needed - we'll add shebang separately
     // Source maps for debugging
     sourcemap: true,
