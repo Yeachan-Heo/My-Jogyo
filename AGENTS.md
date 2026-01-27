@@ -20,43 +20,77 @@ Gyoshu is a scientific research agent extension for OpenCode. It provides:
 
 ## Model Configuration
 
-Gyoshu uses free OpenCode models by default for zero-configuration setup:
+Gyoshu uses OpenCode's built-in model aliases by default:
 
 | Agent | Default Model | Role |
 |-------|---------------|------|
-| **Gyoshu** | `opencode/glm-4.7-free` | Research planner |
-| **Baksa** | `opencode/minimax-m2.1-free` | Adversarial verifier |
-| **Jogyo** | `opencode/minimax-m2.1-free` | Research executor |
-| **Jogyo Paper Writer** | `opencode/minimax-m2.1-free` | Report writer |
-| **Jogyo Feedback** | `opencode/minimax-m2.1-free` | Feedback explorer |
-| **Jogyo Insight** | `opencode/minimax-m2.1-free` | Evidence gatherer |
+| **Gyoshu** | `sonnet` | Research planner |
+| **Baksa** | `sonnet` | Adversarial verifier |
+| **Jogyo** | `sonnet` | Research executor |
+| **Jogyo Paper Writer** | `sonnet` | Report writer |
+| **Jogyo Feedback** | `sonnet` | Feedback explorer |
+| **Jogyo Insight** | `sonnet` | Evidence gatherer |
 
-### Recommended Models for Maximum Performance
+### Available Model Aliases
 
-For best research quality, we recommend using Anthropic's Claude models:
+OpenCode supports these model aliases (mapped to actual model IDs via your `opencode.json`):
 
-| Agent | Recommended Model | Why |
-|-------|-------------------|-----|
+| Alias | Typical Mapping | Use Case |
+|-------|-----------------|----------|
+| `sonnet` | Claude Sonnet | Balanced capability, default for most agents |
+| `opus` | Claude Opus | Complex reasoning, research planning |
+| `haiku` | Claude Haiku | Fast, simple tasks |
+
+### Upgrading to Premium Models
+
+For best research quality, configure premium models in your `opencode.json`:
+
+```json
+{
+  "model": "anthropic/claude-opus-4-5-high",
+  "small_model": "anthropic/claude-haiku-4-5"
+}
+```
+
+| Agent | Recommended Premium Model | Why |
+|-------|---------------------------|-----|
 | **Gyoshu** | `anthropic/claude-opus-4-5-high` | Complex research planning requires top-tier reasoning |
 | **Baksa** | `anthropic/claude-opus-4-5-high` | Adversarial verification needs strong critical thinking |
 | **Jogyo** | `anthropic/claude-sonnet-4-5-high` | Balanced capability for code execution |
 | **Jogyo subagents** | `anthropic/claude-sonnet-4-5-high` | Consistent quality across tasks |
 
-### Changing Models
+### Overriding Agent Models (Recommended Method)
 
-To change an agent's model, edit the `model:` field in the YAML frontmatter of `src/agent/{agent-name}.md`:
+**Important**: Agent files in `~/.config/opencode/agent/` are managed by Gyoshu and will be reset on package updates. To persistently override agent models, use `opencode.json`:
 
-```yaml
----
-mode: subagent
-description: ...
-model: anthropic/claude-sonnet-4-5-high  # Change this line
-temperature: 0.3
-...
----
+```json
+{
+  "agent": {
+    "gyoshu": {
+      "model": "anthropic/claude-opus-4-5-high"
+    },
+    "baksa": {
+      "model": "anthropic/claude-opus-4-5-high"
+    },
+    "jogyo": {
+      "model": "anthropic/claude-sonnet-4-5-high"
+    }
+  }
+}
 ```
 
-> **Note**: The default free models work out-of-the-box. Premium models (Anthropic, OpenAI) require API keys configured in OpenCode.
+This method survives package updates because `opencode.json` is user-controlled.
+
+### Why Agent Files Get Reset
+
+Gyoshu tracks installed files in `~/.config/opencode/.gyoshu/install.json`. Files listed there are considered "Gyoshu-owned" and will be updated when the package updates. This ensures you always have the latest agent prompts and capabilities.
+
+If you need to customize agent behavior beyond model selection, consider:
+1. Using `opencode.json` overrides (recommended)
+2. Creating custom agents with different names
+3. Forking the package for deep customizations
+
+> **Note**: Premium models (Anthropic, OpenAI) require API keys configured in OpenCode.
 
 ## Build & Test Commands
 

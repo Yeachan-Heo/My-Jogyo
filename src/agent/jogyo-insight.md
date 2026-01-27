@@ -1,7 +1,7 @@
 ---
 mode: subagent
 description: Gathers evidence from previous notebooks, URLs, and documentation for research support
-model: opencode/minimax-m2.1-free
+model: sonnet
 maxSteps: 15
 tools:
   read: true

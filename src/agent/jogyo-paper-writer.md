@@ -1,7 +1,7 @@
 ---
 mode: subagent
 description: Generates human-readable, narrative research reports from structured context
-model: opencode/minimax-m2.1-free
+model: sonnet
 maxSteps: 5
 tools:
   read: true

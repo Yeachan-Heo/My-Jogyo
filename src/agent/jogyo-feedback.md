@@ -1,7 +1,7 @@
 ---
 mode: subagent
 description: Explores retrospective feedback to extract lessons and patterns for research improvement
-model: opencode/minimax-m2.1-free
+model: sonnet
 maxSteps: 10
 tools:
   retrospective-store: true
