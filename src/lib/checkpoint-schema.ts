@@ -343,7 +343,7 @@ export const CheckpointManifestSchema = z
       ),
 
     // Timing Fields
-    createdAt: z.iso.datetime({ message: "Invalid ISO 8601 datetime format" }),
+    createdAt: z.string().datetime({ message: "Invalid ISO 8601 datetime format" }),
     executionCount: z.number().int().nonnegative("Execution count must be non-negative"),
 
     // Status Fields

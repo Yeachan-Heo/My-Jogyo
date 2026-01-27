@@ -91,7 +91,7 @@ exports.CheckpointManifestSchema = zod_1.z
         .string()
         .regex(/^S[0-9]{2}_[a-z]+_[a-z_]+$/, "Stage ID must follow format S{NN}_{verb}_{noun}"),
     // Timing Fields
-    createdAt: zod_1.z.iso.datetime({ message: "Invalid ISO 8601 datetime format" }),
+    createdAt: zod_1.z.string().datetime({ message: "Invalid ISO 8601 datetime format" }),
     executionCount: zod_1.z.number().int().nonnegative("Execution count must be non-negative"),
     // Status Fields
     status: exports.CheckpointStatusSchema,
