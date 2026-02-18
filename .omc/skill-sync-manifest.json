@@ -1,0 +1,10 @@
+{
+  "required_mirror_skills": [
+    "manage-skills",
+    "verify-implementation",
+    "verify-skill-frontmatter",
+    "verify-mcp-fallback",
+    "verify-skill-sync",
+    "verify-agent-reference"
+  ]
+}

@@ -1,0 +1,36 @@
+name: skill-verification
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: ["**"]
+  push:
+    branches: ["main", "master"]
+
+jobs:
+  verify-skills:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Verify mirror drift
+        run: python3 scripts/sync-skills.py --check --fail-on-drift
+
+      - name: Verify skills (strict)
+        run: python3 scripts/verify-skills.py --strict
+
+      - name: Upload skill reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: skill-reports
+          path: .omc/reports/skills/
+          if-no-files-found: ignore
