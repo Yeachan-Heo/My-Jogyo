@@ -1,0 +1,21 @@
+{
+  "ignore_path_globs": [
+    "**/.DS_Store",
+    "**/*.bak",
+    "**/*.tmp",
+    "**/__pycache__/**",
+    "**/.pytest_cache/**",
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**"
+  ],
+  "ignore_skills_for_mcp_fallback": [],
+  "ignore_unknown_agent_roles": [
+    "executor-low",
+    "executor-high",
+    "architect-low",
+    "architect-medium",
+    "security-reviewer-low",
+    "scientist-high"
+  ]
+}
