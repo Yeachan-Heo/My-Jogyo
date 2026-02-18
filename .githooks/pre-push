@@ -2,5 +2,5 @@
 set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
-python3 "$ROOT/scripts/sync-skills.py" --check --fail-on-drift
-python3 "$ROOT/scripts/verify-skills.py" --strict
+python3 "$ROOT/scripts/sync-skills.py" --check --fail-on-drift --report "$ROOT/.omc/reports/skills/latest-pre-push-sync.md"
+python3 "$ROOT/scripts/verify-skills.py" --strict --report "$ROOT/.omc/reports/skills/latest-pre-push-verify.md"

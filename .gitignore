@@ -50,3 +50,9 @@ htmlcov/
 
 # Gyoshu runtime (ephemeral session data - sockets, locks)
 gyoshu/runtime/
+
+# Skill-ops runtime artifacts
+.omc/reports/
+.omc/state/
+.omc/notepad.md
+src/mcp/.omc/

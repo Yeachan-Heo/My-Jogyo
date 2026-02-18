@@ -2,4 +2,4 @@
 set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
-python3 "$ROOT/scripts/verify-skills.py" --strict
+python3 "$ROOT/scripts/verify-skills.py" --strict --report "$ROOT/.omc/reports/skills/latest-pre-commit-verify.md"
