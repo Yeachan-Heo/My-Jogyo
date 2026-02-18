@@ -17,7 +17,14 @@
   "scripts": {
     "test": "bun test ./tests",
     "test:watch": "bun test --watch ./tests",
-    "test:python": "pytest tests/test_bridge.py -v"
+    "test:python": "pytest tests/test_bridge.py -v",
+    "skills:sync": "python3 scripts/sync-skills.py --check --fail-on-drift",
+    "skills:sync:apply": "python3 scripts/sync-skills.py --sync",
+    "skills:verify": "python3 scripts/verify-skills.py",
+    "skills:verify:strict": "python3 scripts/verify-skills.py --strict",
+    "skills:maintain": "python3 scripts/manage-skills.py --dry-run",
+    "skills:maintain:apply": "python3 scripts/manage-skills.py --apply-safe",
+    "hooks:install": "bash scripts/install-githooks.sh"
   },
   "repository": {
     "type": "git",

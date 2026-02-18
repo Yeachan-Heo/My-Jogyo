@@ -134,6 +134,31 @@ opencode
 
 ---
 
+## 🛡️ Contributor Skill Gates
+
+This repository includes local skill-ops checks for contributor workflows.
+
+### One-time setup
+
+```bash
+bun run hooks:install
+```
+
+### Common commands
+
+| Command | Purpose |
+|---------|---------|
+| `bun run skills:sync` | Check `.agents/skills` ↔ `.claude/skills` mirror drift |
+| `bun run skills:sync:apply` | Repair mirror drift |
+| `bun run skills:verify` | Run skill verification checks |
+| `bun run skills:verify:strict` | Strict verification gate (CI-equivalent) |
+| `bun run skills:maintain` | Dry-run coverage/stale reference analysis |
+| `bun run skills:maintain:apply` | Safe apply mode for mirror sync |
+
+Reports are written to `.omc/reports/skills/`.
+
+---
+
 ## 🤖 Installation for LLMs
 
 > *Using Claude Code, OpenCode, or another AI coding assistant? This section is for you.*
